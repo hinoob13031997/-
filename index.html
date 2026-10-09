@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Воронка умерших должников</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: схема воронки слева (масштабируется, скроллится), панель критериев справа; на узком экране панель под схемой. */
+:root {
+  --bg: #f3f6f8;
+  --surface: #ffffff;
+  --fg: #14232c;
+  --muted: #5b6b75;
+  --line: #c9d5dc;
+  --edge: #6f8794;
+  --accent: #14607f;
+  --accent-soft: #dcecf3;
+  --head-bg: #14607f;
+  --head-fg: #ffffff;
+  --group-bg: #dbe6ec;
+  --group-fg: #14323f;
+  --ok-bg: #dff1dd;
+  --ok-line: #6fae6a;
+  --warn: #b7650a;
+  --warn-bg: #fdf0dc;
+  --font-body: "Golos Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1a20; --surface: #17262e; --fg: #e5eef2; --muted: #93a7b2; --line: #2c414c;
+    --edge: #6d8896; --accent: #5cb6d9; --accent-soft: #1d3a47; --head-bg: #1d6f92; --head-fg: #ffffff;
+    --group-bg: #23394499; --group-fg: #d4e4ec; --ok-bg: #20392a; --ok-line: #4f8f56;
+    --warn: #f0b05a; --warn-bg: #3a2c15; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1a20; --surface: #17262e; --fg: #e5eef2; --muted: #93a7b2; --line: #2c414c;
+  --edge: #6d8896; --accent: #5cb6d9; --accent-soft: #1d3a47; --head-bg: #1d6f92; --head-fg: #ffffff;
+  --group-bg: #23394499; --group-fg: #d4e4ec; --ok-bg: #20392a; --ok-line: #4f8f56;
+  --warn: #f0b05a; --warn-bg: #3a2c15; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; padding-inline: 16px; padding-block: 20px 32px; }
+.wrap { max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
+h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+.stats { margin: 4px 0 0; color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button { font: inherit; color: inherit; }
+.btn { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 13px; }
+.btn:hover { border-color: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--warn-bg); border-color: var(--warn); color: var(--warn); font-weight: 600; }
+.zoom { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.zoom button { background: none; border: 0; padding: 7px 12px; cursor: pointer; font-size: 13px; }
+.zoom button + button { border-left: 1px solid var(--line); }
+.zoom button:hover { background: var(--accent-soft); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); align-items: center; }
+.legend i { display: inline-block; width: 22px; height: 12px; border-radius: 4px; vertical-align: -2px; margin-right: 6px; border: 1.5px solid var(--edge); }
+.lg-root { background: var(--head-bg); border-color: var(--head-bg) !important; }
+.lg-group { background: var(--group-bg); }
+.lg-stage { background: var(--surface); }
+.lg-result { background: var(--ok-bg); border-color: var(--ok-line) !important; }
+.lg-dot { width: 9px !important; height: 9px !important; border-radius: 50% !important; background: var(--warn); border: 0 !important; }
+.lg-dash { border: 0 !important; border-top: 2px dashed var(--accent) !important; height: 0 !important; border-radius: 0 !important; }
+
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+.board { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+#viewport { overflow: auto; max-height: 78vh; padding: 12px; }
+#sizer { position: relative; }
+#stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#edges { position: absolute; left: 0; top: 0; overflow: visible; }
+#edges path { fill: none; stroke: var(--edge); stroke-width: 1.5; }
+#edges path.on { stroke: var(--accent); stroke-width: 2.5; }
+#edges path.ret { stroke: var(--accent); stroke-dasharray: 6 4; }
+#edges .dim { opacity: .35; }
+.mk-edge { fill: var(--edge); } .mk-on { fill: var(--accent); }
+
+.node { position: absolute; height: 48px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px 10px; border-radius: 9px; border: 1.5px solid var(--edge); background: var(--surface); color: var(--fg); font-size: 13px; font-weight: 500; line-height: 1.2; cursor: pointer; transition: box-shadow .12s, opacity .12s; }
+.node:hover { box-shadow: 0 0 0 3px var(--accent-soft); border-color: var(--accent); }
+.node.t-root { background: var(--head-bg); color: var(--head-fg); border-color: var(--head-bg); font-weight: 600; }
+.node.t-group { background: var(--group-bg); color: var(--group-fg); font-weight: 600; }
+.node.t-result { background: var(--ok-bg); border-color: var(--ok-line); }
+.node.inpath { border-color: var(--accent); border-width: 2px; }
+.node.sel { box-shadow: 0 0 0 4px var(--accent-soft), 0 0 0 6px var(--accent); border-color: var(--accent); }
+.node.has-open::after { content: ""; position: absolute; top: -4px; right: -4px; width: 11px; height: 11px; border-radius: 50%; background: var(--warn); border: 2px solid var(--surface); }
+.node .cnt { position: absolute; left: 6px; bottom: -9px; font-family: var(--font-mono); font-size: 10px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 0 5px; line-height: 15px; }
+.openmode .node:not(.has-open) { opacity: .35; }
+.openmode .node.has-open { box-shadow: 0 0 0 3px var(--warn-bg); border-color: var(--warn); }
+
+aside { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; position: sticky; top: 12px; display: flex; flex-direction: column; gap: 14px; min-width: 0; max-height: calc(100vh - 24px); overflow: auto; }
+.crumbs { display: flex; flex-wrap: wrap; gap: 2px 4px; font-size: 12px; color: var(--muted); }
+.crumbs button { background: none; border: 0; padding: 0; cursor: pointer; color: var(--accent); text-align: left; }
+.crumbs button:hover { text-decoration: underline; }
+.crumbs span { color: var(--muted); }
+.kind { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; }
+aside h2 { margin: 2px 0 0; font-size: 19px; line-height: 1.25; text-wrap: balance; }
+.desc { margin: 0; color: var(--muted); }
+h3 { margin: 0 0 6px; font-size: 11px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 500; }
+ul.crit { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+ul.crit li { position: relative; padding: 8px 10px 8px 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+ul.crit li::before { content: ""; position: absolute; left: 11px; top: 13px; width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
+ul.crit li.q { background: var(--warn-bg); border-color: var(--warn); }
+ul.crit li.q::before { background: var(--warn); border-radius: 50%; }
+.empty { margin: 0; padding: 10px; border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); font-size: 13px; }
+.note { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--accent-soft); font-size: 13px; }
+.next { display: flex; flex-wrap: wrap; gap: 6px; }
+.next button { background: var(--bg); border: 1px solid var(--line); border-radius: 16px; padding: 4px 11px; font-size: 12.5px; cursor: pointer; }
+.next button:hover { border-color: var(--accent); color: var(--accent); }
+.inh { display: flex; flex-direction: column; gap: 8px; }
+.inh details { border-top: 1px solid var(--line); padding-top: 8px; }
+.inh summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.inh .row { font-size: 12.5px; margin-top: 6px; }
+.inh .row b { font-weight: 600; }
+.inh .row span { color: var(--muted); display: block; }
+
+@media (max-width: 1020px) {
+  .main { grid-template-columns: minmax(0, 1fr); }
+  aside { position: static; max-height: none; }
+  #viewport { max-height: 62vh; }
+}
+@media (prefers-reduced-motion: reduce) { .node { transition: none; } }
+
+.databar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.databar.drag { border-color: var(--accent); background: var(--accent-soft); }
+.databar .fileinfo { flex: 1 1 260px; min-width: 0; font-size: 13px; color: var(--muted); }
+.databar .fileinfo b { color: var(--fg); font-weight: 600; overflow-wrap: anywhere; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+:root[data-theme="dark"] .btn.primary { color: #0b1a21; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.primary { color: #0b1a21; } }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn[disabled] { opacity: .45; cursor: not-allowed; }
+.databar select, aside select, aside input[type=text], aside input[type=number], aside textarea { font: inherit; font-size: 13px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; min-width: 0; max-width: 100%; }
+.status { font-size: 12px; color: var(--muted); font-family: var(--font-mono); min-height: 1em; }
+.node .dc { position: absolute; right: 6px; bottom: -9px; font-family: var(--font-mono); font-size: 11px; font-weight: 500; background: var(--accent); color: #fff; border-radius: 8px; padding: 0 6px; line-height: 16px; font-variant-numeric: tabular-nums; }
+:root[data-theme="dark"] .node .dc { color: #0b1a21; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .node .dc { color: #0b1a21; } }
+.node .dc.inh { background: var(--surface); color: var(--muted); border: 1px solid var(--line); line-height: 14px; }
+.tile { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.tile .num { font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.tile .sub { font-size: 12.5px; color: var(--muted); }
+.tile .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.prev { overflow: auto; max-height: 220px; border: 1px solid var(--line); border-radius: 8px; }
+.prev table { border-collapse: collapse; font-size: 12px; white-space: nowrap; }
+.prev th, .prev td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; font-variant-numeric: tabular-nums; }
+.prev th { position: sticky; top: 0; background: var(--surface); color: var(--muted); font-weight: 500; }
+.rulechip { display: block; margin-top: 4px; font-family: var(--font-mono); font-size: 11px; color: var(--accent); overflow-wrap: anywhere; }
+.rulechip.none { color: var(--muted); }
+.h3row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+.h3row h3 { margin: 0; }
+.mini { background: none; border: 1px solid var(--line); border-radius: 7px; padding: 3px 9px; font-size: 12px; cursor: pointer; color: var(--accent); }
+.mini:hover { border-color: var(--accent); }
+.mini.danger { color: var(--warn); }
+.ed { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.ed .line { display: flex; gap: 6px; align-items: flex-start; }
+.ed textarea { flex: 1; resize: vertical; min-height: 36px; }
+.rule { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rule select, .rule input { flex: 1 1 110px; }
+.rule .warn { flex-basis: 100%; font-size: 12px; color: var(--warn); }
+.hint { font-size: 12px; color: var(--muted); margin: 0; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+body { margin: 0; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Воронка умерших должников</h1>
+      <p class="stats" id="stats"></p>
+    </div>
+    <div class="tools">
+      <button class="btn" id="openBtn" aria-pressed="false">Открытые вопросы</button>
+      <div class="zoom" role="group" aria-label="Масштаб схемы">
+        <button id="zOut" aria-label="Уменьшить">−</button>
+        <button id="zFit">По ширине</button>
+        <button id="zIn" aria-label="Увеличить">+</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="databar" id="databar">
+    <label class="btn primary" for="file" style="cursor:pointer">Загрузить Excel</label>
+    <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv" hidden>
+    <select id="sheetSel" aria-label="Лист" hidden></select>
+    <div class="fileinfo" id="fileinfo">Файл не загружен. Загрузите выгрузку (или перетащите сюда), и на блоках появится количество должников.</div>
+    <select id="allMode" aria-label="Состав общего реестра" disabled>
+      <option value="all">Общий реестр: все блоки с критериями</option>
+      <option value="deep">Общий реестр: каждая строка в самом глубоком блоке</option>
+    </select>
+    <button class="btn" id="allBtn" disabled>Скачать общий реестр</button>
+    <span class="status" id="status" role="status"></span>
+  </div>
+
+  <div class="legend">
+    <span><i class="lg-root"></i>Исходная группа</span>
+    <span><i class="lg-group"></i>Сегмент</span>
+    <span><i class="lg-stage"></i>Этап</span>
+    <span><i class="lg-result"></i>Исход суда</span>
+    <span><i class="lg-dot"></i>Есть открытый вопрос</span>
+    <span><i class="lg-dash"></i>Возврат в ветку</span>
+    <span>Слева на блоке число критериев, справа число должников</span>
+  </div>
+
+  <div class="main">
+    <div class="board">
+      <div id="viewport"><div id="sizer"><div id="stage">
+        <svg id="edges" width="1120" height="830" aria-hidden="true">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-edge" d="M0 1 L10 5 L0 9z"/></marker>
+            <marker id="arOn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="mk-on" d="M0 1 L10 5 L0 9z"/></marker>
+          </defs>
+        </svg>
+      </div></div></div>
+    </div>
+    <aside id="panel" aria-live="polite"></aside>
+  </div>
+</div>
+
+<script>
+
+const W = 1120, H = 830, NH = 48;
+/* c: критерии из документа, q: открытые вопросы, n: примечание, d: пояснение к блоку */
+const N = [
+ {id:"root", t:"Все должники", x:560, y:0, w:190, k:"root", d:"Вся база. Воронка делит должников по статусу, наличию судебного акта и этапу правопреемства."},
+ {id:"dead", p:"root", t:"Умершие", x:560, y:66, w:190, k:"root", c:["Есть дата смерти"]},
+
+ {id:"A", p:"dead", t:"Судебный акт вынесен до смерти", x:280, y:148, w:220, k:"group", c:["Долг просужен","Дата СА < Дата смерти"]},
+ {id:"B", p:"dead", t:"Судебного акта нет", x:840, y:148, w:190, k:"group", c:["СА отсутствует","СА недействителен"], q:["СА недействителен: провести анализ (Влад)"]},
+
+ {id:"A1", p:"A", t:"Правопреемство на стороне должника", x:135, y:262, w:200, d:"Замена должника на наследников. Критерии заданы по этапам ниже."},
+ {id:"A1s", p:"A1", t:"На подаче", x:135, y:342, w:190, c:["Замена взыскателя установлена","Срок предъявления ИД не истёк"]},
+ {id:"A1c", p:"A1s", t:"На рассмотрении в суде", x:135, y:422, w:190, c:["Рабочий статус: Контроль Наследство","Рабочий статус: Отправка Наследство ГАС"]},
+ {id:"A1r", p:"A1c", t:"Результат", x:135, y:502, w:190, d:"Исход рассмотрения заявления о правопреемстве."},
+ {id:"A1n", p:"A1r", t:"Отказ", x:75, y:592, w:118, k:"result"},
+ {id:"A1o", p:"A1r", t:"Удовлетворено", x:205, y:592, w:118, k:"result", c:["Есть определение о замене должника"]},
+ {id:"A1na", p:"A1n", t:"Архив", x:60, y:682, w:112, k:"final", c:["Определение об отказе в ПП + статус «Стоп работа»"]},
+ {id:"A1nb", p:"A1n", t:"Обжалуем", x:190, y:682, w:112, k:"final", c:["Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»"], q:["Критерии обжалования сформулировать"]},
+
+ {id:"A2", p:"A", t:"Правопреемство на стороне взыскателя", x:425, y:262, w:200, d:"Замена взыскателя (цессия). После удовлетворения блок возвращается в правопреемство на стороне должника."},
+ {id:"A2s", p:"A2", t:"На подаче", x:425, y:342, w:190,
+   c:["Долг просужен цедентом","Замена взыскателя не установлена","Срок предъявления ИД не истёк","Наличие имущества (по обогащению или залог)","Сумма по ИП более 100 000 руб."],
+   q:["Порог 100 000 руб. по ИП: обсуждаем"],
+   n:"Возвращаемся после проработки по «жёстким» критериям, оцениваем остаток неотработанных и целесообразность ослабления критерия по сумме."},
+ {id:"A2c", p:"A2s", t:"На рассмотрении в суде", x:425, y:422, w:190},
+ {id:"A2r", p:"A2c", t:"Результат", x:425, y:502, w:190, d:"Исход рассмотрения заявления о замене взыскателя."},
+ {id:"A2n", p:"A2r", t:"Отказ", x:365, y:592, w:118, k:"result"},
+ {id:"A2o", p:"A2r", t:"Удовлетворено", x:495, y:592, w:118, k:"result", n:"После удовлетворения должник переходит в ветку «Правопреемство на стороне должника» (замена взыскателя становится установленной)."},
+ {id:"A2na", p:"A2n", t:"Архив", x:350, y:682, w:112, k:"final"},
+ {id:"A2nb", p:"A2n", t:"Обжалуем", x:480, y:682, w:112, k:"final", q:["Критерии обжалования сформулировать"]},
+
+ {id:"Bm", p:"B", t:"СИД пропущен (Архив)", x:710, y:262, w:170, c:["Срок окончания КД больше 3 лет назад"]},
+ {id:"Ba", p:"B", t:"СИД не пропущен", x:930, y:262, w:170, c:["Срок окончания КД меньше 3 лет назад"]},
+ {id:"I", p:"Ba", t:"Иск к наследственной массе", x:930, y:342, w:190, c:["Наличие КД","Наличие имущества (обогащение или залог)","Сумма по АПП ≥ 100 000 руб."], q:["При подаче иска на сумму > 500 тыс. руб. контроль ГС наследственного имущества: уточнить"]},
+ {id:"Is", p:"I", t:"На подаче", x:930, y:422, w:190},
+ {id:"Ic", p:"Is", t:"На рассмотрении в суде", x:930, y:502, w:190},
+ {id:"Ir", p:"Ic", t:"Результат", x:930, y:582, w:190, d:"Исход рассмотрения иска к наследственной массе."},
+ {id:"Iw", p:"Ir", t:"Без рассмотрения (по нашей инициативе, имущества нет)", x:770, y:672, w:160, k:"result", d:"Иск оставлен без рассмотрения по инициативе взыскателя, потому что имущества нет.", c:["Стоимость имущества"], q:["Стоимость имущества: подумать"]},
+ {id:"In", p:"Ir", t:"Отказ", x:930, y:672, w:112, k:"result"},
+ {id:"Io", p:"Ir", t:"Удовлетворено", x:1055, y:672, w:118, k:"result"},
+ {id:"Ina", p:"In", t:"Архив", x:870, y:762, w:112, k:"final"},
+ {id:"Inb", p:"In", t:"Обжалуем", x:990, y:762, w:112, k:"final", q:["Критерии обжалования сформулировать"]}
+];
+const KIND = {root:"Исходная группа", group:"Сегмент", stage:"Этап", result:"Исход суда", final:"Дальнейшее действие"};
+const byId = Object.fromEntries(N.map(n => { n.k = n.k || "stage"; n.c = n.c || []; n.q = n.q || []; return [n.id, n]; }));
+const kids = id => N.filter(n => n.p === id);
+const pathTo = id => { const r = []; for (let n = byId[id]; n; n = byId[n.p]) r.unshift(n); return r; };
+const $ = s => document.querySelector(s);
+const stage = $("#stage"), svg = $("#edges"), panel = $("#panel");
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+const nf = new Intl.NumberFormat("ru-RU");
+
+/* ---------- editable config (criteria, questions, notes) ---------- */
+const defCfg = n => ({ c: n.c.map(t => ({ t, r: null })), q: n.q.slice(), n: n.n || "" });
+const cfg = Object.fromEntries(N.map(n => [n.id, defCfg(n)]));
+let editing = false;
+
+const statusEl = $("#status");
+let statusTimer = null;
+function setStatus(t, ms) { statusEl.textContent = t; clearTimeout(statusTimer); if (ms) statusTimer = setTimeout(() => statusEl.textContent = "", ms); }
+
+let DB = null, DL = null;
+const store = {
+  async load() {
+    try { if (DB) { const s = await DB.doc("funnel/config").get(); if (s.exists) return JSON.parse(s.data().json); } } catch (e) {}
+    try { const t = localStorage.getItem("funnel-cfg-v1"); if (t) return JSON.parse(t); } catch (e) {}
+    return null;
+  },
+  async save() {
+    const json = JSON.stringify(cfg);
+    try { localStorage.setItem("funnel-cfg-v1", json); } catch (e) {}
+    if (!DB) { setStatus("Сохранено в этом браузере", 2500); return; }
+    try { await DB.doc("funnel/config").set({ json }); setStatus("Сохранено", 2000); }
+    catch (e) { setStatus("Сохранено только в этом браузере", 3500); }
+  }
+};
+let saveTimer = null;
+const saveSoon = () => { setStatus("Сохраняю…"); clearTimeout(saveTimer); saveTimer = setTimeout(() => store.save(), 600); };
+function applySaved(obj) {
+  if (!obj || typeof obj !== "object") return;
+  N.forEach(n => {
+    const s = obj[n.id]; if (!s) return;
+    cfg[n.id] = {
+      c: Array.isArray(s.c) ? s.c.map(x => ({ t: String(x.t || ""), r: x.r && x.r.col ? x.r : null })) : cfg[n.id].c,
+      q: Array.isArray(s.q) ? s.q.map(String) : cfg[n.id].q,
+      n: typeof s.n === "string" ? s.n : cfg[n.id].n
+    };
+  });
+}
+
+/* ---------- nodes and edges ---------- */
+const nodeEls = {};
+N.forEach(n => {
+  const b = el("button", "node t-" + n.k, n.t);
+  b.type = "button";
+  b.style.left = (n.x - n.w / 2) + "px"; b.style.top = n.y + "px"; b.style.width = n.w + "px";
+  b.addEventListener("click", () => select(n.id));
+  stage.appendChild(b); nodeEls[n.id] = b;
+});
+function refreshNode(id) {
+  const n = byId[id], b = nodeEls[id], c = cfg[id];
+  b.classList.toggle("has-open", c.q.length > 0);
+  b.setAttribute("aria-label", n.t + (c.c.length ? ", критериев: " + c.c.length : "") + (RES ? ", должников: " + RES[id].length : ""));
+  b.querySelectorAll(".cnt,.dc").forEach(x => x.remove());
+  if (c.c.length) b.appendChild(el("span", "cnt", String(c.c.length)));
+  if (RES) {
+    const d = el("span", "dc" + (OWN[id] ? "" : " inh"), nf.format(RES[id].length));
+    d.title = OWN[id] ? "Должников в блоке" : "Правил для блока нет, число как у вышестоящего";
+    b.appendChild(d);
+  }
+}
+function refreshStats() {
+  let withC = 0, q = 0;
+  N.forEach(n => { if (cfg[n.id].c.length) withC++; q += cfg[n.id].q.length; });
+  $("#stats").textContent = N.length + " блоков · " + withC + " с критериями · " + q + " открытых вопросов";
+}
+const edgeEls = {};
+function mkPath(d, cls, marker) {
+  const p = document.createElementNS(NS, "path");
+  p.setAttribute("d", d); if (cls) p.setAttribute("class", cls);
+  p.setAttribute("marker-end", marker || "url(#ar)");
+  svg.appendChild(p); return p;
+}
+N.forEach(n => {
+  if (!n.p) return;
+  const a = byId[n.p], x1 = a.x, y1 = a.y + NH, x2 = n.x, y2 = n.y;
+  edgeEls[n.id] = mkPath(x1 === x2 ? `M${x1} ${y1}V${y2 - 1}` : `M${x1} ${y1}V${(y1 + y2) / 2}H${x2}V${y2 - 1}`);
+});
+mkPath("M554 616H575V246H150V261", "ret", "url(#arOn)");
+
+/* ---------- data: parse, normalise, rules ---------- */
+let DATA = null;            // {file, sheet, cols:[], rows:[[]], sheets:[], wb}
+let NORM = [], STR = [];    // per column caches
+let RES = null, OWN = {};   // node id -> row indices; node id -> active rules
+const OPS = [
+  ["filled", "заполнено"], ["empty", "пусто"], ["eq", "="], ["ne", "≠"], ["lt", "<"], ["le", "≤"], ["gt", ">"], ["ge", "≥"],
+  ["contains", "содержит"], ["ncontains", "не содержит"], ["older", "дата старше N лет"], ["newer", "дата не старше N лет"]
+];
+const CMP_OPS = ["eq", "ne", "lt", "le", "gt", "ge"];
+const opLabel = o => (OPS.find(x => x[0] === o) || [0, o])[1];
+
+function normStr(s) {
+  const t = String(s).replace(/ /g, " ").trim();
+  if (t === "") return null;
+  let m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (m) return Date.UTC(+m[3], +m[2] - 1, +m[1]);
+  m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  const u = t.replace(/\s/g, "").replace(",", ".");
+  if (/^-?\d+(\.\d+)?$/.test(u)) return Number(u);
+  return t.toLowerCase();
+}
+function normVal(v) {
+  if (v == null) return null;
+  if (v instanceof Date) return isNaN(v) ? null : Date.UTC(v.getFullYear(), v.getMonth(), v.getDate());
+  if (typeof v === "number") return isNaN(v) ? null : v;
+  return normStr(v);
+}
+function fmtCell(v) {
+  if (v == null) return "";
+  if (v instanceof Date) { const p = x => String(x).padStart(2, "0"); return p(v.getDate()) + "." + p(v.getMonth() + 1) + "." + v.getFullYear(); }
+  return String(v);
+}
+function buildCaches() {
+  const nc = DATA.cols.length;
+  NORM = []; STR = [];
+  for (let c = 0; c < nc; c++) {
+    const a = new Array(DATA.rows.length), s = new Array(DATA.rows.length);
+    for (let i = 0; i < DATA.rows.length; i++) { const v = DATA.rows[i][c]; a[i] = normVal(v); s[i] = v == null ? "" : fmtCell(v).toLowerCase(); }
+    NORM.push(a); STR.push(s);
+  }
+}
+const colIdx = name => DATA ? DATA.cols.indexOf(name) : -1;
+
+function makeTest(r) {
+  if (!DATA || !r || !r.col) return null;
+  const ci = colIdx(r.col); if (ci < 0) return null;
+  const A = NORM[ci], S = STR[ci], op = r.op || "filled";
+  if (op === "filled") return i => A[i] !== null;
+  if (op === "empty") return i => A[i] === null;
+  if (op === "contains" || op === "ncontains") {
+    const v = String(r.val || "").toLowerCase(); if (!v) return null;
+    return op === "contains" ? i => S[i].includes(v) : i => !S[i].includes(v);
+  }
+  if (op === "older" || op === "newer") {
+    const n = Number(String(r.val).replace(",", ".")); if (!isFinite(n)) return null;
+    const d = new Date(); const thr = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - n * 365.25 * 864e5;
+    return op === "older" ? i => typeof A[i] === "number" && A[i] < thr : i => typeof A[i] === "number" && A[i] >= thr;
+  }
+  if (!CMP_OPS.includes(op)) return null;
+  let B = null, k = null;
+  if (r.cmp) { const cj = colIdx(r.cmp); if (cj < 0) return null; B = NORM[cj]; }
+  else { if (r.val == null || String(r.val).trim() === "") return null; k = normStr(r.val); }
+  return i => {
+    const a = A[i], b = B ? B[i] : k;
+    if (a === null || b === null) return op === "ne";
+    if (typeof a !== typeof b) return op === "ne";
+    switch (op) {
+      case "eq": return a === b; case "ne": return a !== b;
+      case "lt": return a < b; case "le": return a <= b; case "gt": return a > b; default: return a >= b;
+    }
+  };
+}
+function describeRule(r) {
+  if (!r || !r.col) return "";
+  const op = r.op || "filled";
+  if (op === "filled" || op === "empty") return r.col + " " + opLabel(op);
+  if (op === "older" || op === "newer") return r.col + ": " + opLabel(op).replace("N", r.val || "N");
+  return r.col + " " + opLabel(op) + " " + (r.cmp ? "[" + r.cmp + "]" : (r.val || "…"));
+}
+
+function recalc() {
+  if (!DATA) { RES = null; OWN = {}; return; }
+  RES = {}; OWN = {};
+  N.forEach(n => {
+    const tests = cfg[n.id].c.map(c => makeTest(c.r)).filter(Boolean);
+    OWN[n.id] = tests.length;
+    if (!n.p) { RES[n.id] = Array.from({ length: DATA.rows.length }, (_, i) => i); return; }
+    const base = RES[n.p];
+    if (!tests.length) { RES[n.id] = base; return; }
+    const out = [];
+    for (let j = 0; j < base.length; j++) { const i = base[j]; let ok = true; for (let t = 0; t < tests.length; t++) if (!tests[t](i)) { ok = false; break; } if (ok) out.push(i); }
+    RES[n.id] = out;
+  });
+  N.forEach(n => refreshNode(n.id));
+  updatePanelData();
+}
+
+/* ---------- file loading ---------- */
+function setInfo(html) { const f = $("#fileinfo"); f.replaceChildren(); html.forEach(x => f.appendChild(typeof x === "string" ? document.createTextNode(x) : x)); }
+function pickSheet(wb, name) {
+  const ws = wb.Sheets[name];
+  const arr = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+  let h = arr.findIndex(r => r && r.some(v => v != null && String(v).trim() !== ""));
+  if (h < 0) throw new Error("Лист пустой");
+  const used = {};
+  const cols = arr[h].map((v, i) => {
+    let t = v == null || String(v).trim() === "" ? "Колонка " + (i + 1) : String(v).trim();
+    if (used[t]) { used[t]++; t = t + " (" + used[t] + ")"; } else used[t] = 1;
+    return t;
+  });
+  const rows = arr.slice(h + 1).filter(r => r && r.some(v => v != null && String(v).trim() !== "")).map(r => { const o = new Array(cols.length); for (let i = 0; i < cols.length; i++) o[i] = r[i] === undefined ? null : r[i]; return o; });
+  return { cols, rows };
+}
+function useSheet(name) {
+  const { cols, rows } = pickSheet(DATA.wb, name);
+  DATA.sheet = name; DATA.cols = cols; DATA.rows = rows;
+  buildCaches(); recalc();
+  setInfo([el("b", null, DATA.file), " · лист «" + name + "» · " + nf.format(rows.length) + " строк · " + cols.length + " колонок"]);
+  $("#allBtn").disabled = false; $("#allMode").disabled = false;
+  if (sel) select(sel);
+}
+async function loadFile(file) {
+  if (typeof XLSX === "undefined") { setStatus("Не загрузилась библиотека чтения Excel", 5000); return; }
+  setStatus("Читаю файл…");
+  await new Promise(r => setTimeout(r, 30));
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array", cellDates: true });
+    DATA = { file: file.name, wb, sheets: wb.SheetNames, cols: [], rows: [] };
+    const ss = $("#sheetSel"); ss.replaceChildren();
+    wb.SheetNames.forEach(s => ss.appendChild(new Option(s, s)));
+    ss.hidden = wb.SheetNames.length < 2;
+    useSheet(wb.SheetNames[0]);
+    setStatus("Файл загружен", 2500);
+  } catch (e) {
+    DATA = null; RES = null; OWN = {}; N.forEach(n => refreshNode(n.id));
+    setInfo(["Не удалось прочитать файл: " + (e.message || e)]); setStatus("", 0); updatePanelData();
+  }
+}
+$("#file").addEventListener("change", e => { const f = e.target.files[0]; if (f) loadFile(f); e.target.value = ""; });
+$("#sheetSel").addEventListener("change", e => { try { useSheet(e.target.value); } catch (err) { setStatus(String(err.message || err), 4000); } });
+const bar = $("#databar");
+["dragenter", "dragover"].forEach(t => addEventListener(t, e => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) { e.preventDefault(); bar.classList.add("drag"); } }));
+["dragleave", "drop"].forEach(t => addEventListener(t, e => { if (t === "drop" || e.target === document.documentElement || !e.relatedTarget) bar.classList.remove("drag"); }));
+addEventListener("drop", e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) { e.preventDefault(); loadFile(f); } });
+
+/* ---------- downloads ---------- */
+function safeName(s) { return s.replace(/[\\/:*?"<>|\n\r]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80); }
+function aoa(idxs) { const out = [DATA.cols.slice()]; for (const i of idxs) out.push(DATA.rows[i]); return out; }
+function sheetFrom(a) { return XLSX.utils.aoa_to_sheet(a, { cellDates: true, dateNF: "dd.mm.yyyy" }); }
+async function saveBook(wb, filename) {
+  try {
+    const data = XLSX.write(wb, { bookType: "xlsx", type: "array", cellDates: true });
+    if (DL) await DL.save({ filename, data });
+    else {
+      const blob = new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    }
+    setStatus("Файл сохранён", 2500);
+  } catch (e) {
+    setStatus(e && e.code === "declined" ? "Скачивание отменено" : "Не удалось сохранить файл" + (e && e.message ? ": " + e.message : ""), 5000);
+  }
+}
+function critText(id) { return cfg[id].c.map(c => c.t + (c.r ? " [" + describeRule(c.r) + "]" : "")).join("; "); }
+function pathText(id) { return pathTo(id).map(n => n.t).join(" > "); }
+async function downloadBlock(id) {
+  if (!RES) return;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, sheetFrom(aoa(RES[id])), "Реестр");
+  const info = [["Блок", byId[id].t], ["Путь", pathText(id)], ["Должников", RES[id].length], ["Файл-источник", DATA.file], ["Критерии блока", critText(id)]];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(info), "О выборке");
+  await saveBook(wb, "Реестр - " + safeName(byId[id].t) + ".xlsx");
+}
+async function downloadAll() {
+  if (!RES) return;
+  const deep = $("#allMode").value === "deep";
+  const ruled = N.filter(n => OWN[n.id] > 0);
+  const summary = [["Блок", "Путь", "Критерии блока", "Должников", "Правил в выборке"]];
+  N.forEach(n => summary.push([n.t, pathText(n.id), critText(n.id), RES[n.id].length, OWN[n.id] || 0]));
+  const long = [["Блок", "Путь"].concat(DATA.cols)];
+  let sets = null;
+  if (deep) { sets = {}; ruled.forEach(n => { const s = new Uint8Array(DATA.rows.length); RES[n.id].forEach(i => s[i] = 1); sets[n.id] = s; }); }
+  const descRuled = id => { const out = []; (function w(x) { kids(x).forEach(k => { if (OWN[k.id] > 0) out.push(k.id); w(k.id); }); })(id); return out; };
+  ruled.forEach(n => {
+    const D = deep ? descRuled(n.id) : [];
+    for (const i of RES[n.id]) {
+      if (deep && D.some(d => sets[d][i])) continue;
+      long.push([n.t, pathText(n.id)].concat(DATA.rows[i]));
+    }
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "Сводка");
+  XLSX.utils.book_append_sheet(wb, sheetFrom(long), "Реестр");
+  setStatus("Готовлю файл…");
+  await new Promise(r => setTimeout(r, 30));
+  await saveBook(wb, "Общий реестр воронки.xlsx");
+}
+$("#allBtn").addEventListener("click", downloadAll);
+
+/* ---------- panel ---------- */
+let sel = null;
+function select(id) {
+  sel = id;
+  const ids = new Set(pathTo(id).map(n => n.id));
+  Object.entries(nodeEls).forEach(([k, e]) => { e.classList.toggle("sel", k === id); e.classList.toggle("inpath", ids.has(k) && k !== id); });
+  Object.entries(edgeEls).forEach(([k, e]) => { const on = ids.has(k); e.classList.toggle("on", on); e.setAttribute("marker-end", on ? "url(#arOn)" : "url(#ar)"); });
+  renderPanel();
+}
+function section(title, node, right) {
+  const s = el("div"); const h = el("div", "h3row"); h.appendChild(el("h3", null, title)); if (right) h.appendChild(right);
+  s.appendChild(h); s.appendChild(node); return s;
+}
+function mini(text, fn, cls) { const b = el("button", "mini" + (cls ? " " + cls : ""), text); b.type = "button"; b.addEventListener("click", fn); return b; }
+
+function dataBlock(id) {
+  const t = el("div", "tile"); t.id = "tile";
+  t.appendChild(el("div", "num")).id = "tileNum";
+  t.appendChild(el("div", "sub")).id = "tileSub";
+  const acts = el("div", "acts");
+  const dl = el("button", "btn primary", "Скачать реестр блока"); dl.type = "button"; dl.id = "dlBlock";
+  dl.addEventListener("click", () => downloadBlock(sel)); acts.appendChild(dl);
+  t.appendChild(acts);
+  const pv = el("div", "prev"); pv.id = "prev"; t.appendChild(pv);
+  return t;
+}
+function updatePanelData() {
+  const num = $("#tileNum"); if (!num || !sel) return;
+  const id = sel, rows = RES[id].length, total = DATA.rows.length;
+  num.textContent = nf.format(rows);
+  const pct = total ? (rows / total * 100) : 0;
+  $("#tileSub").textContent = "из " + nf.format(total) + " строк файла (" + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (OWN[id] ? "" : ". У блока нет правил, реестр совпадает с вышестоящим.");
+  $("#dlBlock").disabled = rows === 0;
+  const pv = $("#prev"); pv.replaceChildren();
+  if (!rows) { pv.appendChild(el("p", "empty", "В блоке нет строк.")); return; }
+  const tb = el("table"), th = el("tr");
+  DATA.cols.forEach(c => th.appendChild(el("th", null, c))); tb.appendChild(el("thead")).appendChild(th);
+  const body = el("tbody");
+  RES[id].slice(0, 10).forEach(i => { const tr = el("tr"); DATA.rows[i].forEach(v => tr.appendChild(el("td", null, fmtCell(v)))); body.appendChild(tr); });
+  tb.appendChild(body); pv.appendChild(tb);
+}
+
+function renderPanel() {
+  const n = byId[sel], c = cfg[sel], path = pathTo(sel);
+  panel.replaceChildren();
+  const crumbs = el("nav", "crumbs"); crumbs.setAttribute("aria-label", "Путь по воронке");
+  path.slice(0, -1).forEach(p => {
+    const b = el("button", null, p.t); b.type = "button"; b.addEventListener("click", () => { editing = false; select(p.id); });
+    crumbs.appendChild(b); crumbs.appendChild(el("span", null, "›"));
+  });
+  if (path.length > 1) panel.appendChild(crumbs);
+  const head = el("div");
+  head.appendChild(el("p", "kind", KIND[n.k])); head.appendChild(el("h2", null, n.t));
+  panel.appendChild(head);
+  if (n.d) panel.appendChild(el("p", "desc", n.d));
+  if (DATA && RES) panel.appendChild(dataBlock(sel));
+
+  if (editing) renderEditor(n, c); else renderView(n, c, path);
+  if (DATA && RES) updatePanelData();
+}
+
+function renderView(n, c, path) {
+  const edit = mini("Править", () => { editing = true; renderPanel(); });
+  let body;
+  if (c.c.length) {
+    body = el("ul", "crit");
+    c.c.forEach(x => {
+      const li = el("li", null, x.t);
+      if (x.r) { const ch = el("span", "rulechip", "Правило: " + describeRule(x.r) + (DATA && colIdx(x.r.col) < 0 ? " (колонки нет в файле)" : "")); li.appendChild(ch); }
+      else if (DATA) li.appendChild(el("span", "rulechip none", "Не привязан к колонке, на выборку не влияет"));
+      body.appendChild(li);
+    });
+  } else body = el("p", "empty", kids(n.id).length ? "Собственных критериев нет. Они заданы у вложенных блоков." : "Критерии для этого блока не заданы.");
+  panel.appendChild(section("Критерии блока", body, edit));
+  if (c.q.length) { const ul = el("ul", "crit"); c.q.forEach(t => ul.appendChild(el("li", "q", t))); panel.appendChild(section("Открытые вопросы", ul)); }
+  if (c.n) panel.appendChild(el("p", "note", c.n));
+  const ks = kids(n.id);
+  if (ks.length) {
+    const box = el("div", "next");
+    ks.forEach(k => { const b = el("button", null, k.t.replace(/\s*\(.*\)$/, "")); b.type = "button"; b.addEventListener("click", () => select(k.id)); box.appendChild(b); });
+    panel.appendChild(section("Дальше по воронке", box));
+  }
+  const anc = path.slice(0, -1).filter(p => cfg[p.id].c.length);
+  if (anc.length) {
+    const wrap = el("div", "inh"), det = el("details");
+    det.appendChild(el("summary", null, "Условия вышестоящих блоков (" + anc.length + ")"));
+    anc.forEach(p => { const r = el("div", "row"); r.appendChild(el("b", null, p.t)); r.appendChild(el("span", null, cfg[p.id].c.map(x => x.t).join("; "))); det.appendChild(r); });
+    wrap.appendChild(det); panel.appendChild(wrap);
+  }
+}
+
+function changed() { refreshNode(sel); refreshStats(); saveSoon(); }
+function selectEl(opts, value, label) {
+  const s = el("select"); if (label) s.setAttribute("aria-label", label);
+  opts.forEach(([v, t]) => s.appendChild(new Option(t, v)));
+  if (!opts.some(o => o[0] === value)) s.appendChild(new Option("(нет в файле) " + value, value));
+  s.value = value; return s;
+}
+function ruleBuilder(crit) {
+  const box = el("div", "rule");
+  const draw = () => {
+    box.replaceChildren();
+    const r = crit.r;
+    const cols = DATA ? DATA.cols : [];
+    if (!DATA && !r) { box.appendChild(el("p", "hint", "Загрузите Excel, чтобы привязать критерий к колонкам.")); return; }
+    const colSel = selectEl([["", "Колонка: не привязан"]].concat(cols.map(c => [c, c])), r ? r.col : "", "Колонка");
+    colSel.addEventListener("change", () => { if (!colSel.value) crit.r = null; else if (!crit.r) crit.r = { col: colSel.value, op: "filled", cmp: "", val: "" }; else crit.r.col = colSel.value; draw(); recalc(); changed(); });
+    box.appendChild(colSel);
+    if (!crit.r) return;
+    if (DATA && colIdx(crit.r.col) < 0) box.appendChild(el("span", "warn", "Колонки «" + crit.r.col + "» нет в загруженном файле. Правило пока не применяется."));
+    const opSel = selectEl(OPS, crit.r.op || "filled", "Условие");
+    opSel.addEventListener("change", () => { crit.r.op = opSel.value; if (!CMP_OPS.includes(opSel.value)) crit.r.cmp = ""; draw(); recalc(); changed(); });
+    box.appendChild(opSel);
+    const op = crit.r.op || "filled";
+    if (CMP_OPS.includes(op)) {
+      const cm = selectEl([["", "значение"]].concat(cols.map(c => ["col:" + c, "колонка: " + c])), crit.r.cmp ? "col:" + crit.r.cmp : "", "Сравнить с");
+      cm.addEventListener("change", () => { crit.r.cmp = cm.value.startsWith("col:") ? cm.value.slice(4) : ""; draw(); recalc(); changed(); });
+      box.appendChild(cm);
+    }
+    if ((CMP_OPS.includes(op) && !crit.r.cmp) || op === "contains" || op === "ncontains" || op === "older" || op === "newer") {
+      const inp = el("input"); inp.type = "text"; inp.value = crit.r.val || "";
+      inp.placeholder = op === "older" || op === "newer" ? "лет, например 3" : (CMP_OPS.includes(op) ? "число, дата 31.12.2020 или текст" : "текст");
+      inp.setAttribute("aria-label", "Значение");
+      let tm; inp.addEventListener("input", () => { crit.r.val = inp.value; clearTimeout(tm); tm = setTimeout(() => { recalc(); changed(); }, 350); });
+      box.appendChild(inp);
+    }
+  };
+  draw(); return box;
+}
+function renderEditor(n, c) {
+  const crit = el("div", "ed");
+  const cwrap = el("div");
+  const drawC = () => {
+    cwrap.replaceChildren();
+    c.c.forEach((x, k) => {
+      const item = el("div", "ed"); item.style.marginBottom = "8px";
+      const line = el("div", "line");
+      const ta = el("textarea"); ta.value = x.t; ta.rows = 2; ta.setAttribute("aria-label", "Текст критерия");
+      ta.addEventListener("input", () => { x.t = ta.value; changed(); });
+      line.appendChild(ta);
+      line.appendChild(mini("Удалить", () => { c.c.splice(k, 1); drawC(); recalc(); changed(); }, "danger"));
+      item.appendChild(line); item.appendChild(ruleBuilder(x)); cwrap.appendChild(item);
+    });
+    if (!c.c.length) cwrap.appendChild(el("p", "hint", "Критериев пока нет."));
+  };
+  drawC();
+  crit.appendChild(cwrap);
+  crit.appendChild(mini("+ Добавить критерий", () => { c.c.push({ t: "", r: null }); drawC(); changed(); }));
+  panel.appendChild(section("Критерии блока", crit));
+
+  const qbox = el("div", "ed"), qwrap = el("div");
+  const drawQ = () => {
+    qwrap.replaceChildren();
+    c.q.forEach((t, k) => {
+      const line = el("div", "line"); line.style.marginBottom = "6px";
+      const ta = el("textarea"); ta.value = t; ta.rows = 2; ta.setAttribute("aria-label", "Открытый вопрос");
+      ta.addEventListener("input", () => { c.q[k] = ta.value; changed(); });
+      line.appendChild(ta); line.appendChild(mini("Удалить", () => { c.q.splice(k, 1); drawQ(); changed(); }, "danger"));
+      qwrap.appendChild(line);
+    });
+    if (!c.q.length) qwrap.appendChild(el("p", "hint", "Открытых вопросов нет."));
+  };
+  drawQ(); qbox.appendChild(qwrap);
+  qbox.appendChild(mini("+ Добавить вопрос", () => { c.q.push(""); drawQ(); changed(); }));
+  panel.appendChild(section("Открытые вопросы", qbox));
+
+  const nt = el("textarea"); nt.rows = 3; nt.value = c.n; nt.style.width = "100%"; nt.setAttribute("aria-label", "Примечание");
+  nt.addEventListener("input", () => { c.n = nt.value; changed(); });
+  panel.appendChild(section("Примечание", nt));
+
+  const acts = el("div", "actions");
+  const done = el("button", "btn primary", "Готово"); done.type = "button";
+  done.addEventListener("click", () => { c.c = c.c.filter(x => x.t.trim()); c.q = c.q.filter(t => t.trim()); editing = false; recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); });
+  acts.appendChild(done);
+  acts.appendChild(mini("Вернуть как в документе", () => { cfg[sel] = defCfg(n); recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); }, "danger"));
+  panel.appendChild(acts);
+  panel.appendChild(el("p", "hint", "Изменения сохраняются автоматически. Критерий с правилом сразу меняет выборку и число должников."));
+}
+
+/* ---------- open-questions mode and zoom ---------- */
+$("#openBtn").addEventListener("click", e => {
+  const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+  e.currentTarget.setAttribute("aria-pressed", String(on));
+  stage.classList.toggle("openmode", on);
+  e.currentTarget.textContent = on ? "Показать всё" : "Открытые вопросы";
+});
+const vp = $("#viewport"), sizer = $("#sizer");
+let scale = 1, manual = false;
+function apply(s) {
+  scale = Math.min(1.6, Math.max(0.4, s));
+  stage.style.transform = "scale(" + scale + ")";
+  sizer.style.width = W * scale + "px"; sizer.style.height = H * scale + "px";
+  stage.style.width = W + "px"; stage.style.height = H + "px";
+}
+function fit() { manual = false; apply(Math.max(0.55, Math.min(1, (vp.clientWidth - 24) / W))); vp.scrollLeft = 0; }
+$("#zIn").addEventListener("click", () => { manual = true; apply(scale + 0.1); });
+$("#zOut").addEventListener("click", () => { manual = true; apply(scale - 0.1); });
+$("#zFit").addEventListener("click", fit);
+addEventListener("resize", () => { if (!manual) fit(); });
+
+/* ---------- start ---------- */
+N.forEach(n => refreshNode(n.id)); refreshStats(); fit(); select("dead");
+(async () => {
+  try { DB = (await window.claude?.use("db")) || null; } catch (e) { DB = null; }
+  try { DL = (await window.claude?.use("downloads")) || null; } catch (e) { DL = null; }
+  const saved = await store.load();
+  if (saved) { applySaved(saved); N.forEach(n => refreshNode(n.id)); refreshStats(); if (!editing) renderPanel(); }
+})();
+</script>
+</body>
+</html>
