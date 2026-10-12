@@ -18,6 +18,8 @@
   --edge: #6f8794;
   --accent: #14607f;
   --accent-soft: #dcecf3;
+  --sel: #d90f1b;
+  --sel-halo: #f8c9cc;
   --head-bg: #14607f;
   --head-fg: #ffffff;
   --group-bg: #dbe6ec;
@@ -34,14 +36,14 @@
     --bg: #0f1a20; --surface: #17262e; --fg: #e5eef2; --muted: #93a7b2; --line: #2c414c;
     --edge: #6d8896; --accent: #5cb6d9; --accent-soft: #1d3a47; --head-bg: #1d6f92; --head-fg: #ffffff;
     --group-bg: #23394499; --group-fg: #d4e4ec; --ok-bg: #20392a; --ok-line: #4f8f56;
-    --warn: #f0b05a; --warn-bg: #3a2c15; color-scheme: dark;
+    --warn: #f0b05a; --warn-bg: #3a2c15; --sel: #ff4d55; --sel-halo: #5a1d22; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0f1a20; --surface: #17262e; --fg: #e5eef2; --muted: #93a7b2; --line: #2c414c;
   --edge: #6d8896; --accent: #5cb6d9; --accent-soft: #1d3a47; --head-bg: #1d6f92; --head-fg: #ffffff;
   --group-bg: #23394499; --group-fg: #d4e4ec; --ok-bg: #20392a; --ok-line: #4f8f56;
-  --warn: #f0b05a; --warn-bg: #3a2c15; color-scheme: dark;
+  --warn: #f0b05a; --warn-bg: #3a2c15; --sel: #ff4d55; --sel-halo: #5a1d22; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; padding-inline: 16px; padding-block: 20px 32px; }
@@ -87,7 +89,7 @@ button { font: inherit; color: inherit; }
 .node.t-group { background: var(--group-bg); color: var(--group-fg); font-weight: 600; }
 .node.t-result { background: var(--ok-bg); border-color: var(--ok-line); }
 .node.inpath { border-color: var(--accent); border-width: 2px; }
-.node.sel { box-shadow: 0 0 0 4px var(--accent-soft), 0 0 0 6px var(--accent); border-color: var(--accent); }
+.node.sel { border: 4px solid var(--sel); box-shadow: 0 0 0 3px var(--sel-halo); }
 .node.has-open::after { content: ""; position: absolute; top: -4px; right: -4px; width: 11px; height: 11px; border-radius: 50%; background: var(--warn); border: 2px solid var(--surface); }
 .node .cnt { position: absolute; left: 6px; bottom: -9px; font-family: var(--font-mono); font-size: 10px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 0 5px; line-height: 15px; }
 .openmode .node:not(.has-open) { opacity: .35; }
