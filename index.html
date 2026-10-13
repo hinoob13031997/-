@@ -289,13 +289,15 @@ const nf = new Intl.NumberFormat("ru-RU");
 const R = (col, op, val) => ({ col, op, val: val == null ? "" : String(val), cmp: "" });
 const DEFR = {
   dead: { "Есть дата смерти": R("Дата смерти", "filled") },
-  A: { "Долг просужен": R("№ Исполнительного документа", "filled") },
-  B: { "СА отсутствует": R("№ Исполнительного документа", "empty") },
+  A: { "Долг просужен": R("Дата ИД", "filled"), "Дата СА < Дата смерти": { col: "Дата ИД", op: "lt", val: "", cmp: "Дата смерти" } },
+  B: { "СА отсутствует": R("Дата ИД", "empty") },
   Bm: { "Срок окончания КД больше 3 лет назад": R("Срок займа, дата", "older", 3) },
   Ba: { "Срок окончания КД меньше 3 лет назад": R("Срок займа, дата", "newer", 3) },
   A1c: { "Рабочий статус: Контроль Наследство": R("Рабочий статус", "eq", "Контроль Наследство"), "Рабочий статус: Отправка Наследство ГАС": R("Рабочий статус", "eq", "Отправка Наследство ГАС") },
   A1nb: { "Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»": R("Рабочий статус", "eq", "ЧЖ отказ Правопреемство") },
-  A2s: { "Сумма по ИП более 100 000 руб.": R("Сумма долга по ИП", "gt", 100000) }
+  A1s: { "Замена взыскателя установлена": R("Замена взыскателя", "eq", 1), "Срок предъявления ИД не истёк": R("Дата окончания ИП", "emptynewer", 3) },
+  A2s: { "Долг просужен цедентом": R("Дата ИД", "filled"), "Замена взыскателя не установлена": R("Замена взыскателя", "eq", 0), "Срок предъявления ИД не истёк": R("Дата окончания ИП", "emptynewer", 3), "Наличие имущества (по обогащению или залог)": R("Наличие имущества", "eq", 1), "Сумма по ИП более 100 000 руб.": R("Сумма долга по ИП", "gt", 100000) },
+  I: { "Наличие имущества (обогащение или залог)": R("Наличие имущества", "eq", 1), "Сумма по АПП ≥ 100 000 руб.": R("Сумма долга по цессии", "ge", 100000) }
 };
 const defRule = (id, t) => { const r = DEFR[id] && DEFR[id][t]; return r ? Object.assign({}, r) : null; };
 const defCfg = n => ({ c: n.c.map(t => ({ t, r: defRule(n.id, t) })), q: n.q.slice(), n: n.n || "" });
@@ -541,7 +543,7 @@ let NORM = [], STR = [];    // per column caches
 let RES = null, OWN = {};   // node id -> row indices; node id -> active rules
 const OPS = [
   ["filled", "заполнено"], ["empty", "пусто"], ["eq", "="], ["ne", "≠"], ["lt", "<"], ["le", "≤"], ["gt", ">"], ["ge", "≥"],
-  ["contains", "содержит"], ["ncontains", "не содержит"], ["older", "дата старше N лет"], ["newer", "дата не старше N лет"]
+  ["contains", "содержит"], ["ncontains", "не содержит"], ["older", "дата старше N лет"], ["newer", "дата не старше N лет"], ["emptynewer", "пусто или дата не старше N лет"]
 ];
 const CMP_OPS = ["eq", "ne", "lt", "le", "gt", "ge"];
 const opLabel = o => (OPS.find(x => x[0] === o) || [0, o])[1];
@@ -581,7 +583,10 @@ const colIdx = name => DATA ? DATA.cols.indexOf(name) : -1;
 
 function makeTest(r) {
   if (!DATA || !r || !r.col) return null;
-  const ci = colIdx(r.col); if (ci < 0) return null;
+  let ci = colIdx(r.col);
+  /* пока в выгрузке нет колонки «Дата ИД», наличие ИД определяем по его номеру */
+  if (ci < 0 && r.col === "Дата ИД" && (r.op === "filled" || r.op === "empty")) ci = colIdx("№ Исполнительного документа");
+  if (ci < 0) return null;
   const A = NORM[ci], S = STR[ci], op = r.op || "filled";
   if (op === "filled") return i => A[i] !== null;
   if (op === "empty") return i => A[i] === null;
@@ -589,9 +594,10 @@ function makeTest(r) {
     const v = String(r.val || "").toLowerCase(); if (!v) return null;
     return op === "contains" ? i => S[i].includes(v) : i => !S[i].includes(v);
   }
-  if (op === "older" || op === "newer") {
+  if (op === "older" || op === "newer" || op === "emptynewer") {
     const n = Number(String(r.val).replace(",", ".")); if (!isFinite(n)) return null;
     const d = new Date(); const thr = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - n * 365.25 * 864e5;
+    if (op === "emptynewer") return i => A[i] === null || (typeof A[i] === "number" && A[i] >= thr);
     return op === "older" ? i => typeof A[i] === "number" && A[i] < thr : i => typeof A[i] === "number" && A[i] >= thr;
   }
   if (!CMP_OPS.includes(op)) return null;
@@ -612,7 +618,7 @@ function describeRule(r) {
   if (!r || !r.col) return "";
   const op = r.op || "filled";
   if (op === "filled" || op === "empty") return r.col + " " + opLabel(op);
-  if (op === "older" || op === "newer") return r.col + ": " + opLabel(op).replace("N", r.val || "N");
+  if (op === "older" || op === "newer" || op === "emptynewer") return r.col + ": " + opLabel(op).replace("N", r.val || "N");
   return r.col + " " + opLabel(op) + " " + (r.cmp ? "[" + r.cmp + "]" : (r.val || "…"));
 }
 
@@ -872,9 +878,9 @@ function ruleBuilder(crit) {
       cm.addEventListener("change", () => { crit.r.cmp = cm.value.startsWith("col:") ? cm.value.slice(4) : ""; draw(); recalc(); changed(); });
       box.appendChild(cm);
     }
-    if ((CMP_OPS.includes(op) && !crit.r.cmp) || op === "contains" || op === "ncontains" || op === "older" || op === "newer") {
+    if ((CMP_OPS.includes(op) && !crit.r.cmp) || op === "contains" || op === "ncontains" || op === "older" || op === "newer" || op === "emptynewer") {
       const inp = el("input"); inp.type = "text"; inp.value = crit.r.val || "";
-      inp.placeholder = op === "older" || op === "newer" ? "лет, например 3" : (CMP_OPS.includes(op) ? "число, дата 31.12.2020 или текст" : "текст");
+      inp.placeholder = op === "older" || op === "newer" || op === "emptynewer" ? "лет, например 3" : (CMP_OPS.includes(op) ? "число, дата 31.12.2020 или текст" : "текст");
       inp.setAttribute("aria-label", "Значение");
       let tm; inp.addEventListener("input", () => { crit.r.val = inp.value; clearTimeout(tm); tm = setTimeout(() => { recalc(); changed(); }, 350); });
       box.appendChild(inp);
