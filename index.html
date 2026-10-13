@@ -810,6 +810,16 @@ function renderView(n, c, path) {
   }
 }
 
+function readLocal() { try { const t = localStorage.getItem("funnel-cfg-v1"); return t ? JSON.parse(t) : null; } catch (e) { return null; } }
+function localEdits() {
+  const o = readLocal(), out = {}; if (!o || typeof o !== "object") return out;
+  N.forEach(n => {
+    const s = o[n.id]; if (!s) return; const d = defCfg(n);
+    const v = { c: Array.isArray(s.c) ? s.c.map(x => ({ t: String(x.t || ""), r: x.r && x.r.col ? x.r : null })) : d.c, q: Array.isArray(s.q) ? s.q.map(String) : d.q, n: typeof s.n === "string" ? s.n : d.n };
+    if (JSON.stringify(v) !== JSON.stringify(d)) out[n.id] = v;
+  });
+  return out;
+}
 function changed() { if (sel) dirty.add(sel); refreshNode(sel); refreshStats(); saveSoon(); }
 function selectEl(opts, value, label) {
   const s = el("select"); if (label) s.setAttribute("aria-label", label);
@@ -896,6 +906,18 @@ function renderEditor(n, c) {
   acts.appendChild(mini("Вернуть как в документе", () => { cfg[sel] = defCfg(n); recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); }, "danger"));
   panel.appendChild(acts);
   if (REMOTE) acts.appendChild(mini("Сменить пароль", () => showAuth("change")));
+  if (REMOTE) {
+    const le = localEdits(), ids = Object.keys(le).filter(id => JSON.stringify(le[id]) !== JSON.stringify(cfg[id]));
+    if (ids.length) {
+      let armed = false;
+      const mb = mini("Перенести правки этого браузера (" + ids.length + ")", () => {
+        if (!armed) { armed = true; mb.textContent = "Подтвердить: заменить общие данные у блоков: " + ids.length; return; }
+        ids.forEach(id => { cfg[id] = le[id]; dirty.add(id); });
+        recalc(); repaintAll(); saveSoon(); setStatus("Правки перенесены, сохраняю…", 3000); renderPanel();
+      });
+      acts.appendChild(mb);
+    }
+  }
   panel.appendChild(el("p", "hint", (REMOTE ? "Изменения сохраняются в общий файл и появляются у всех в течение 3 минут. " : "Изменения сохраняются автоматически. ") + "Критерий с правилом сразу меняет выборку и число должников."));
 }
 
