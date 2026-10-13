@@ -240,12 +240,12 @@ const N = [
 
  {id:"A1", p:"A", t:"Правопреемство на стороне должника", x:135, y:262, w:200, d:"Замена должника на наследников. Критерии заданы по этапам ниже."},
  {id:"A1s", p:"A1", t:"На подаче", x:135, y:342, w:190, c:["Замена взыскателя установлена","Срок предъявления ИД не истёк"]},
- {id:"A1c", p:"A1s", t:"На рассмотрении в суде", x:135, y:422, w:190, c:["Рабочий статус: Контроль Наследство","Рабочий статус: Отправка Наследство ГАС"]},
+ {id:"A1c", p:"A1s", union:true, t:"На рассмотрении в суде", x:135, y:422, w:190, c:["Рабочий статус: Контроль Наследство","Рабочий статус: Отправка Наследство ГАС"]},
  {id:"A1r", p:"A1c", t:"Результат", x:135, y:502, w:190, d:"Исход рассмотрения заявления о правопреемстве."},
  {id:"A1n", p:"A1r", t:"Отказ", x:75, y:592, w:118, k:"result"},
  {id:"A1o", p:"A1r", t:"Удовлетворено", x:205, y:592, w:118, k:"result", c:["Есть определение о замене должника"]},
  {id:"A1na", p:"A1n", t:"Архив", x:60, y:682, w:112, k:"final", c:["Определение об отказе в ПП + статус «Стоп работа»"]},
- {id:"A1nb", p:"A1n", t:"Обжалуем", x:190, y:682, w:112, k:"final", c:["Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»"], q:["Критерии обжалования сформулировать"]},
+ {id:"A1nb", p:"A1n", from:"A", t:"Обжалуем", x:190, y:682, w:112, k:"final", c:["Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»"], q:["Критерии обжалования сформулировать"]},
 
  {id:"A2", p:"A", t:"Правопреемство на стороне взыскателя", x:425, y:262, w:200, d:"Замена взыскателя (цессия). После удовлетворения блок возвращается в правопреемство на стороне должника."},
  {id:"A2s", p:"A2", t:"На подаче", x:425, y:342, w:190,
@@ -282,7 +282,20 @@ const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) 
 const nf = new Intl.NumberFormat("ru-RU");
 
 /* ---------- editable config (criteria, questions, notes) ---------- */
-const defCfg = n => ({ c: n.c.map(t => ({ t, r: null })), q: n.q.slice(), n: n.n || "" });
+const R = (col, op, val) => ({ col, op, val: val == null ? "" : String(val), cmp: "" });
+const DEFR = {
+  dead: { "Есть дата смерти": R("Дата смерти", "filled") },
+  A: { "Долг просужен": R("№ Исполнительного документа", "filled") },
+  B: { "СА отсутствует": R("№ Исполнительного документа", "empty") },
+  Bm: { "Срок окончания КД больше 3 лет назад": R("Срок займа, дата", "older", 3) },
+  Ba: { "Срок окончания КД меньше 3 лет назад": R("Срок займа, дата", "newer", 3) },
+  A1c: { "Рабочий статус: Контроль Наследство": R("Рабочий статус", "eq", "Контроль Наследство"), "Рабочий статус: Отправка Наследство ГАС": R("Рабочий статус", "eq", "Отправка Наследство ГАС") },
+  A1nb: { "Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»": R("Рабочий статус", "eq", "ЧЖ отказ Правопреемство") },
+  A2s: { "Сумма по ИП более 100 000 руб.": R("Сумма долга по ИП", "gt", 100000) }
+};
+const defRule = (id, t) => { const r = DEFR[id] && DEFR[id][t]; return r ? Object.assign({}, r) : null; };
+const defCfg = n => ({ c: n.c.map(t => ({ t, r: defRule(n.id, t) })), q: n.q.slice(), n: n.n || "" });
+const mapCrit = (id, x) => { const r = x.r && x.r.col ? x.r : null, o = { t: String(x.t || ""), r: r || (x.off ? null : defRule(id, String(x.t || ""))) }; if (x.off && !r) o.off = true; return o; };
 const cfg = Object.fromEntries(N.map(n => [n.id, defCfg(n)]));
 let editing = false;
 
@@ -314,7 +327,7 @@ function applySaved(obj) {
   N.forEach(n => {
     const s = obj[n.id]; if (!s) return;
     cfg[n.id] = {
-      c: Array.isArray(s.c) ? s.c.map(x => ({ t: String(x.t || ""), r: x.r && x.r.col ? x.r : null })) : cfg[n.id].c,
+      c: Array.isArray(s.c) ? s.c.map(x => mapCrit(n.id, x)) : cfg[n.id].c,
       q: Array.isArray(s.q) ? s.q.map(String) : cfg[n.id].q,
       n: typeof s.n === "string" ? s.n : cfg[n.id].n
     };
@@ -489,12 +502,13 @@ N.forEach(n => {
 function refreshNode(id) {
   const n = byId[id], b = nodeEls[id], c = cfg[id];
   b.classList.toggle("has-open", c.q.length > 0);
-  b.setAttribute("aria-label", n.t + (c.c.length ? ", критериев: " + c.c.length : "") + (RES ? ", должников: " + RES[id].length : ""));
+  b.setAttribute("aria-label", n.t + (c.c.length ? ", критериев: " + c.c.length : "") + (RES ? (n.p && !OWN[id] ? ", нет данных" : ", должников: " + RES[id].length) : ""));
   b.querySelectorAll(".cnt,.dc").forEach(x => x.remove());
   if (c.c.length) b.appendChild(el("span", "cnt", String(c.c.length)));
   if (RES) {
-    const d = el("span", "dc" + (OWN[id] ? "" : " inh"), nf.format(RES[id].length));
-    d.title = OWN[id] ? "Должников в блоке" : "Правил для блока нет, число как у вышестоящего";
+    const nd = n.p && !OWN[id];
+    const d = el("span", "dc" + (nd ? " inh" : ""), nd ? "—" : nf.format(RES[id].length));
+    d.title = nd ? "Для блока нет данных в файле: привяжите критерии к колонкам" : "Должников в блоке";
     b.appendChild(d);
   }
 }
@@ -605,10 +619,10 @@ function recalc() {
     const tests = cfg[n.id].c.map(c => makeTest(c.r)).filter(Boolean);
     OWN[n.id] = tests.length;
     if (!n.p) { RES[n.id] = Array.from({ length: DATA.rows.length }, (_, i) => i); return; }
-    const base = RES[n.p];
+    const base = RES[n.from || n.p];
     if (!tests.length) { RES[n.id] = base; return; }
     const out = [];
-    for (let j = 0; j < base.length; j++) { const i = base[j]; let ok = true; for (let t = 0; t < tests.length; t++) if (!tests[t](i)) { ok = false; break; } if (ok) out.push(i); }
+    for (let j = 0; j < base.length; j++) { const i = base[j]; let ok = !!n.union ? false : true; for (let t = 0; t < tests.length; t++) { if (n.union) { if (tests[t](i)) { ok = true; break; } } else if (!tests[t](i)) { ok = false; break; } } if (ok) out.push(i); }
     RES[n.id] = out;
   });
   N.forEach(n => refreshNode(n.id));
@@ -697,7 +711,7 @@ async function downloadAll() {
   const deep = $("#allMode").value === "deep";
   const ruled = N.filter(n => OWN[n.id] > 0);
   const summary = [["Блок", "Путь", "Критерии блока", "Должников", "Правил в выборке"]];
-  N.forEach(n => summary.push([n.t, pathText(n.id), critText(n.id), RES[n.id].length, OWN[n.id] || 0]));
+  N.forEach(n => summary.push([n.t, pathText(n.id), critText(n.id), n.p && !OWN[n.id] ? "нет данных" : RES[n.id].length, OWN[n.id] || 0]));
   const long = [["Блок", "Путь"].concat(DATA.cols)];
   let sets = null;
   if (deep) { sets = {}; ruled.forEach(n => { const s = new Uint8Array(DATA.rows.length); RES[n.id].forEach(i => s[i] = 1); sets[n.id] = s; }); }
@@ -747,10 +761,11 @@ function dataBlock(id) {
 function updatePanelData() {
   const num = $("#tileNum"); if (!num || !sel) return;
   const id = sel, rows = RES[id].length, total = DATA.rows.length;
-  num.textContent = nf.format(rows);
+  const nd = byId[id].p && !OWN[id];
+  num.textContent = nd ? "—" : nf.format(rows);
   const pct = total ? (rows / total * 100) : 0;
-  $("#tileSub").textContent = "из " + nf.format(total) + " строк файла (" + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (OWN[id] ? "" : ". У блока нет правил, реестр совпадает с вышестоящим.");
-  $("#dlBlock").disabled = rows === 0;
+  $("#tileSub").textContent = "из " + nf.format(total) + " строк файла (" + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (nd ? ". Для этого блока в файле нет данных. Привяжите критерии к колонкам (режим правки), иначе число не считается." : "");
+  $("#dlBlock").disabled = rows === 0 || !!nd;
   const pv = $("#prev"); pv.replaceChildren();
   if (!rows) { pv.appendChild(el("p", "empty", "В блоке нет строк.")); return; }
   const tb = el("table"), th = el("tr");
@@ -815,7 +830,7 @@ function localEdits() {
   const o = readLocal(), out = {}; if (!o || typeof o !== "object") return out;
   N.forEach(n => {
     const s = o[n.id]; if (!s) return; const d = defCfg(n);
-    const v = { c: Array.isArray(s.c) ? s.c.map(x => ({ t: String(x.t || ""), r: x.r && x.r.col ? x.r : null })) : d.c, q: Array.isArray(s.q) ? s.q.map(String) : d.q, n: typeof s.n === "string" ? s.n : d.n };
+    const v = { c: Array.isArray(s.c) ? s.c.map(x => mapCrit(n.id, x)) : d.c, q: Array.isArray(s.q) ? s.q.map(String) : d.q, n: typeof s.n === "string" ? s.n : d.n };
     if (JSON.stringify(v) !== JSON.stringify(d)) out[n.id] = v;
   });
   return out;
@@ -835,7 +850,7 @@ function ruleBuilder(crit) {
     const cols = DATA ? DATA.cols : [];
     if (!DATA && !r) { box.appendChild(el("p", "hint", "Загрузите Excel, чтобы привязать критерий к колонкам.")); return; }
     const colSel = selectEl([["", "Колонка: не привязан"]].concat(cols.map(c => [c, c])), r ? r.col : "", "Колонка");
-    colSel.addEventListener("change", () => { if (!colSel.value) crit.r = null; else if (!crit.r) crit.r = { col: colSel.value, op: "filled", cmp: "", val: "" }; else crit.r.col = colSel.value; draw(); recalc(); changed(); });
+    colSel.addEventListener("change", () => { if (!colSel.value) { crit.r = null; crit.off = true; } else if (!crit.r) { delete crit.off; crit.r = { col: colSel.value, op: "filled", cmp: "", val: "" }; } else crit.r.col = colSel.value; draw(); recalc(); changed(); });
     box.appendChild(colSel);
     if (!crit.r) return;
     if (DATA && colIdx(crit.r.col) < 0) box.appendChild(el("span", "warn", "Колонки «" + crit.r.col + "» нет в загруженном файле. Правило пока не применяется."));
