@@ -143,6 +143,10 @@ ul.crit li.q::before { background: var(--warn); border-radius: 50%; }
 :root[data-theme="dark"] .node .dc { color: #0b1a21; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .node .dc { color: #0b1a21; } }
 .node .dc.inh { background: var(--surface); color: var(--muted); border: 1px solid var(--line); line-height: 22px; border-width: 1px; box-shadow: none; font-weight: 500; }
+.regwrap { display: flex; flex-direction: column; gap: 8px; }
+.reghd { font: inherit; font-size: 13px; font-weight: 600; text-align: left; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text, inherit); cursor: pointer; }
+.reghd:hover { border-color: var(--accent); }
+.tile[hidden] { display: none; }
 .tile { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .tile .num { font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .tile .sub { font-size: 12.5px; color: var(--muted); }
@@ -747,6 +751,7 @@ function section(title, node, right) {
 }
 function mini(text, fn, cls) { const b = el("button", "mini" + (cls ? " " + cls : ""), text); b.type = "button"; b.addEventListener("click", fn); return b; }
 
+let regOpen = true;
 function dataBlock(id) {
   const t = el("div", "tile"); t.id = "tile";
   t.appendChild(el("div", "num")).id = "tileNum";
@@ -756,7 +761,12 @@ function dataBlock(id) {
   dl.addEventListener("click", () => downloadBlock(sel)); acts.appendChild(dl);
   t.appendChild(acts);
   const pv = el("div", "prev"); pv.id = "prev"; t.appendChild(pv);
-  return t;
+  const wrap = el("div", "regwrap");
+  const hd = el("button", "reghd"); hd.type = "button"; hd.setAttribute("aria-controls", "tile");
+  const paint = () => { hd.textContent = (regOpen ? "▾" : "▸") + "  Реестр для скачивания"; hd.setAttribute("aria-expanded", String(regOpen)); t.hidden = !regOpen; };
+  hd.addEventListener("click", () => { regOpen = !regOpen; paint(); });
+  paint(); wrap.appendChild(hd); wrap.appendChild(t);
+  return wrap;
 }
 function updatePanelData() {
   const num = $("#tileNum"); if (!num || !sel) return;
