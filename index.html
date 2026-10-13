@@ -354,6 +354,7 @@ function applySaved(obj) {
 /* ---------- shared storage in the GitHub repo (password-protected editing) ---------- */
 let TOKEN = null, AUTH = null, cfgSha = null, saving = false, pending = false;
 const dirty = new Set();
+let authUnknown = false;
 const REPO = "hinoob13031997/-", BR = "main", API = "https://api.github.com/repos/" + REPO + "/contents/";
 const te = new TextEncoder(), td = new TextDecoder();
 const b64 = u8 => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
@@ -361,11 +362,17 @@ const unb64 = t => Uint8Array.from(atob(String(t).replace(/\s/g, "")), c => c.ch
 const ghHeaders = extra => Object.assign({ Accept: "application/vnd.github+json" }, TOKEN ? { Authorization: "Bearer " + TOKEN } : {}, extra || {});
 function ghErr(r, what) { const e = new Error(what + " (" + r.status + ")"); e.status = r.status; return e; }
 async function ghGet(file) {
-  const r = await fetch(API + file + "?ref=" + BR + "&_=" + Date.now(), { headers: ghHeaders(), cache: "no-store" });
-  if (r.status === 404) return null;
-  if (!r.ok) throw ghErr(r, "GitHub");
-  const j = await r.json();
-  return { sha: j.sha, json: JSON.parse(td.decode(unb64(j.content))) };
+  let r = null;
+  try { r = await fetch(API + file + "?ref=" + BR + "&_=" + Date.now(), { headers: ghHeaders(), cache: "no-store" }); } catch (e) { r = null; }
+  if (r && r.status === 404) return null;
+  if (r && r.ok) { const j = await r.json(); return { sha: j.sha, json: JSON.parse(td.decode(unb64(j.content))) }; }
+  /* API GitHub недоступен (лимит запросов, сеть): читаем файл с самого сайта, без sha */
+  if (!TOKEN) {
+    const f = await fetch(file + "?_=" + Date.now(), { cache: "no-store" });
+    if (f.status === 404) return null;
+    if (f.ok) return { sha: null, json: await f.json() };
+  }
+  throw r ? ghErr(r, "GitHub") : new Error("нет связи с GitHub");
 }
 async function ghPut(file, obj, message, sha) {
   const body = { message, content: b64(te.encode(JSON.stringify(obj, null, 1))), branch: BR };
@@ -423,7 +430,7 @@ function repaintAll() {
 }
 async function pullConfig() {
   const r = await ghGet("config.json");
-  if (!r || r.sha === cfgSha) return;
+  if (!r || !r.sha || r.sha === cfgSha) return;
   cfgSha = r.sha; applySaved(r.json.cfg); repaintAll();
 }
 function updateAuthBtn() {
@@ -437,6 +444,14 @@ function field(label, type, id, hint) {
   w.appendChild(i); if (hint) w.appendChild(el("span", "hint", hint)); return w;
 }
 function showAuth(mode) {
+  if (!mode && !TOKEN && !AUTH && authUnknown) {
+    panel.replaceChildren(); panel.appendChild(mini("← Назад", () => renderPanel()));
+    panel.appendChild(el("h2", null, "Нет связи с GitHub"));
+    panel.appendChild(el("p", "empty", "Не удалось загрузить общие критерии и настройки доступа. Ваши правки в репозитории целы, дело в загрузке. Нажмите «Повторить» или обновите страницу. Настройку токена заново делать не нужно."));
+    const rt = el("button", "btn primary", "Повторить"); rt.type = "button";
+    rt.addEventListener("click", async () => { rt.disabled = true; await initRemote(); if (authUnknown) showAuth(); else { renderPanel(); showAuth(); } });
+    panel.appendChild(rt); return;
+  }
   mode = mode || (TOKEN ? "change" : (AUTH ? "login" : "setup"));
   panel.replaceChildren();
   panel.appendChild(mini("← Назад", () => renderPanel()));
@@ -468,7 +483,7 @@ function showAuth(mode) {
       if (mode === "login") {
         try { TOKEN = await decToken(AUTH, pw); } catch (e) { TOKEN = null; return fail("Неверный пароль."); }
         const r = await ghGet("config.json").catch(() => null);
-        if (r) { cfgSha = r.sha; applySaved(r.json.cfg); repaintAll(); }
+        if (r) { if (r.sha) cfgSha = r.sha; applySaved(r.json.cfg); repaintAll(); }
       } else {
         if (pw.length < 10) return fail("Пароль короче 10 символов.");
         if (pw !== $("#fPw2").value) return fail("Пароли не совпадают.");
@@ -486,7 +501,7 @@ function showAuth(mode) {
         const save = TOKEN; TOKEN = token;
         try { await ghPut("auth.json", obj, mode === "setup" ? "Настройка доступа к правкам" : "Смена пароля", cur); } catch (e) { TOKEN = save; return fail("Не удалось сохранить доступ: " + e.message); }
         AUTH = obj;
-        const r = await ghGet("config.json").catch(() => null); if (r) { cfgSha = r.sha; applySaved(r.json.cfg); repaintAll(); }
+        const r = await ghGet("config.json").catch(() => null); if (r) { if (r.sha) cfgSha = r.sha; applySaved(r.json.cfg); repaintAll(); }
       }
       editing = true; updateAuthBtn(); setStatus(mode === "change" ? "Пароль изменён" : "Режим правки включён", 3000); renderPanel();
     } catch (e) { fail("Ошибка: " + (e.message || e)); }
@@ -498,10 +513,10 @@ function showAuth(mode) {
 }
 async function initRemote() {
   try {
-    const [c, a] = await Promise.all([ghGet("config.json"), ghGet("auth.json")]);
-    AUTH = a ? a.json : null;
-    if (c) { cfgSha = c.sha; applySaved(c.json.cfg); repaintAll(); }
-  } catch (e) { setStatus("Не удалось загрузить общие критерии: " + e.message, 8000); }
+    const [c, a] = await Promise.all([ghGet("config.json").catch(e => { authUnknown = true; throw e; }), ghGet("auth.json")]);
+    AUTH = a ? a.json : null; authUnknown = false;
+    if (c) { if (c.sha) cfgSha = c.sha; applySaved(c.json.cfg); repaintAll(); }
+  } catch (e) { authUnknown = true; setStatus("Не удалось загрузить общие критерии: " + e.message, 8000); }
   const tick = () => { if (document.hidden || editing || saving || dirty.size) return; pullConfig().catch(() => {}); };
   setInterval(tick, 150000);
   document.addEventListener("visibilitychange", tick);
