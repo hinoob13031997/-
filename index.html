@@ -179,6 +179,7 @@ body { margin: 0; }
       <p class="stats" id="stats"></p>
     </div>
     <div class="tools">
+      <button class="btn" id="authBtn" hidden>Войти для правки</button>
       <button class="btn" id="openBtn" aria-pressed="false">Открытые вопросы</button>
       <div class="zoom" role="group" aria-label="Масштаб схемы">
         <button id="zOut" aria-label="Уменьшить">−</button>
@@ -290,6 +291,7 @@ let statusTimer = null;
 function setStatus(t, ms) { statusEl.textContent = t; clearTimeout(statusTimer); if (ms) statusTimer = setTimeout(() => statusEl.textContent = "", ms); }
 
 let DB = null, DL = null;
+let REMOTE = false;
 const store = {
   async load() {
     try { if (DB) { const s = await DB.doc("funnel/config").get(); if (s.exists) return JSON.parse(s.data().json); } } catch (e) {}
@@ -297,6 +299,7 @@ const store = {
     return null;
   },
   async save() {
+    if (REMOTE) { if (sel) dirty.add(sel); return saveRemote(); }
     const json = JSON.stringify(cfg);
     try { localStorage.setItem("funnel-cfg-v1", json); } catch (e) {}
     if (!DB) { setStatus("Сохранено в этом браузере", 2500); return; }
@@ -316,6 +319,162 @@ function applySaved(obj) {
       n: typeof s.n === "string" ? s.n : cfg[n.id].n
     };
   });
+}
+
+/* ---------- shared storage in the GitHub repo (password-protected editing) ---------- */
+let TOKEN = null, AUTH = null, cfgSha = null, saving = false, pending = false;
+const dirty = new Set();
+const REPO = "hinoob13031997/-", BR = "main", API = "https://api.github.com/repos/" + REPO + "/contents/";
+const te = new TextEncoder(), td = new TextDecoder();
+const b64 = u8 => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
+const unb64 = t => Uint8Array.from(atob(String(t).replace(/\s/g, "")), c => c.charCodeAt(0));
+const ghHeaders = extra => Object.assign({ Accept: "application/vnd.github+json" }, TOKEN ? { Authorization: "Bearer " + TOKEN } : {}, extra || {});
+function ghErr(r, what) { const e = new Error(what + " (" + r.status + ")"); e.status = r.status; return e; }
+async function ghGet(file) {
+  const r = await fetch(API + file + "?ref=" + BR + "&_=" + Date.now(), { headers: ghHeaders(), cache: "no-store" });
+  if (r.status === 404) return null;
+  if (!r.ok) throw ghErr(r, "GitHub");
+  const j = await r.json();
+  return { sha: j.sha, json: JSON.parse(td.decode(unb64(j.content))) };
+}
+async function ghPut(file, obj, message, sha) {
+  const body = { message, content: b64(te.encode(JSON.stringify(obj, null, 1))), branch: BR };
+  if (sha) body.sha = sha;
+  const r = await fetch(API + file, { method: "PUT", headers: ghHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(body) });
+  if (!r.ok) throw ghErr(r, "GitHub");
+  return (await r.json()).content.sha;
+}
+async function deriveKey(pw, salt, iter) {
+  const km = await crypto.subtle.importKey("raw", te.encode(pw), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: iter, hash: "SHA-256" }, km, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+async function encToken(token, pw) {
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12)), iter = 310000;
+  const key = await deriveKey(pw, salt, iter);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, te.encode(token)));
+  return { v: 1, iter, salt: b64(salt), iv: b64(iv), ct: b64(ct) };
+}
+async function decToken(o, pw) {
+  const key = await deriveKey(pw, unb64(o.salt), o.iter);
+  return td.decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(o.iv) }, key, unb64(o.ct)));
+}
+async function saveRemote() {
+  if (!TOKEN) return;
+  if (saving) { pending = true; return; }
+  saving = true;
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const names = [...dirty].map(id => byId[id].t).join(", ").slice(0, 120);
+        const sha = await ghPut("config.json", { v: 1, updated: new Date().toISOString(), cfg }, "Критерии воронки: " + (names || "обновление"), cfgSha);
+        cfgSha = sha; dirty.clear(); setStatus("Сохранено для всех", 3000); break;
+      } catch (e) {
+        if (e.status === 409 || e.status === 422) {
+          const mine = {}; dirty.forEach(id => mine[id] = cfg[id]);
+          const r = await ghGet("config.json");
+          if (r) { applySaved(r.json.cfg); cfgSha = r.sha; } else cfgSha = null;
+          dirty.forEach(id => cfg[id] = mine[id]);
+          continue;
+        }
+        setStatus(e.status === 401 || e.status === 403 ? "Нет прав записи: токен просрочен или неверный. Войдите заново." : "Не удалось сохранить: " + e.message, 8000);
+        if (e.status === 401 || e.status === 403) { TOKEN = null; editing = false; updateAuthBtn(); }
+        break;
+      }
+    }
+  } finally {
+    saving = false;
+    if (pending) { pending = false; saveRemote(); }
+  }
+}
+function repaintAll() {
+  N.forEach(n => refreshNode(n.id)); refreshStats();
+  if (DATA) recalc();
+  if (!editing && sel) renderPanel();
+}
+async function pullConfig() {
+  const r = await ghGet("config.json");
+  if (!r || r.sha === cfgSha) return;
+  cfgSha = r.sha; applySaved(r.json.cfg); repaintAll();
+}
+function updateAuthBtn() {
+  const b = $("#authBtn"); b.hidden = !REMOTE;
+  b.textContent = TOKEN ? "Режим правки · Выйти" : "Войти для правки";
+}
+function field(label, type, id, hint) {
+  const w = el("label"); w.style.cssText = "display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--muted)";
+  w.appendChild(document.createTextNode(label));
+  const i = el("input"); i.type = type; i.id = id; i.autocomplete = type === "password" ? "off" : "off"; i.style.width = "100%";
+  w.appendChild(i); if (hint) w.appendChild(el("span", "hint", hint)); return w;
+}
+function showAuth(mode) {
+  mode = mode || (TOKEN ? "change" : (AUTH ? "login" : "setup"));
+  panel.replaceChildren();
+  panel.appendChild(mini("← Назад", () => renderPanel()));
+  panel.appendChild(el("h2", null, mode === "setup" ? "Настройка доступа" : mode === "change" ? "Смена пароля" : "Вход для правки"));
+  const msg = el("p", "empty"); msg.hidden = true; msg.setAttribute("role", "alert");
+  const fail = t => { msg.textContent = t; msg.hidden = false; };
+  if (mode === "setup") {
+    const d = el("div", "note");
+    d.appendChild(document.createTextNode("Один раз создайте на GitHub токен только для этого репозитория и придумайте пароль. Токен сохранится в репозитории в зашифрованном виде и расшифровывается только паролем."));
+    const ol = el("ol"); ol.style.cssText = "margin:8px 0 0;padding-left:18px";
+    ["Откройте создание токена и войдите в GitHub.", "Repository access: Only select repositories, выберите hinoob13031997/-.", "Permissions → Repository permissions → Contents: Read and write.", "Срок действия выберите максимальный и нажмите Generate token.", "Скопируйте токен (начинается с github_pat_) и вставьте ниже."].forEach(t => ol.appendChild(el("li", null, t)));
+    d.appendChild(ol);
+    const a = el("a", null, "Создать токен на GitHub"); a.href = "https://github.com/settings/personal-access-tokens/new"; a.target = "_blank"; a.rel = "noopener"; a.style.cssText = "display:inline-block;margin-top:8px;color:var(--accent)";
+    d.appendChild(a); panel.appendChild(d);
+    panel.appendChild(field("Токен GitHub", "password", "fTok"));
+  }
+  if (mode === "login") panel.appendChild(field("Пароль", "password", "fPw"));
+  if (mode === "setup" || mode === "change") {
+    panel.appendChild(field(mode === "setup" ? "Придумайте пароль" : "Новый пароль", "password", "fPw", "Не короче 10 символов. Чем длиннее, тем лучше: фраза из нескольких слов подойдёт."));
+    panel.appendChild(field("Повторите пароль", "password", "fPw2"));
+  }
+  panel.appendChild(msg);
+  const go = el("button", "btn primary", mode === "login" ? "Войти" : "Сохранить"); go.type = "button";
+  panel.appendChild(go);
+  const run = async () => {
+    msg.hidden = true; go.disabled = true;
+    try {
+      const pw = $("#fPw").value;
+      if (mode === "login") {
+        try { TOKEN = await decToken(AUTH, pw); } catch (e) { TOKEN = null; return fail("Неверный пароль."); }
+        const r = await ghGet("config.json").catch(() => null);
+        if (r) { cfgSha = r.sha; applySaved(r.json.cfg); repaintAll(); }
+      } else {
+        if (pw.length < 10) return fail("Пароль короче 10 символов.");
+        if (pw !== $("#fPw2").value) return fail("Пароли не совпадают.");
+        let token = TOKEN;
+        if (mode === "setup") {
+          token = $("#fTok").value.trim();
+          if (!token) return fail("Вставьте токен GitHub.");
+          const chk = await fetch("https://api.github.com/repos/" + REPO, { headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + token } });
+          if (!chk.ok) return fail("GitHub не принял токен (" + chk.status + "). Проверьте, что он скопирован целиком.");
+          const info = await chk.json();
+          if (!info.permissions || !info.permissions.push) return fail("У токена нет права записи в репозиторий. Нужно Contents: Read and write.");
+        }
+        const obj = await encToken(token, pw);
+        const cur = await (async () => { const h = { Accept: "application/vnd.github+json", Authorization: "Bearer " + token }; const r = await fetch(API + "auth.json?ref=" + BR + "&_=" + Date.now(), { headers: h, cache: "no-store" }); return r.ok ? (await r.json()).sha : null; })();
+        const save = TOKEN; TOKEN = token;
+        try { await ghPut("auth.json", obj, mode === "setup" ? "Настройка доступа к правкам" : "Смена пароля", cur); } catch (e) { TOKEN = save; return fail("Не удалось сохранить доступ: " + e.message); }
+        AUTH = obj;
+        const r = await ghGet("config.json").catch(() => null); if (r) { cfgSha = r.sha; applySaved(r.json.cfg); repaintAll(); }
+      }
+      editing = true; updateAuthBtn(); setStatus(mode === "change" ? "Пароль изменён" : "Режим правки включён", 3000); renderPanel();
+    } catch (e) { fail("Ошибка: " + (e.message || e)); }
+    finally { go.disabled = false; }
+  };
+  go.addEventListener("click", run);
+  panel.onkeydown = e => { if (e.key === "Enter" && e.target.tagName === "INPUT") run(); };
+  const first = panel.querySelector("input"); if (first) first.focus();
+}
+async function initRemote() {
+  try {
+    const [c, a] = await Promise.all([ghGet("config.json"), ghGet("auth.json")]);
+    AUTH = a ? a.json : null;
+    if (c) { cfgSha = c.sha; applySaved(c.json.cfg); repaintAll(); }
+  } catch (e) { setStatus("Не удалось загрузить общие критерии: " + e.message, 8000); }
+  const tick = () => { if (document.hidden || editing || saving || dirty.size) return; pullConfig().catch(() => {}); };
+  setInterval(tick, 150000);
+  document.addEventListener("visibilitychange", tick);
 }
 
 /* ---------- nodes and edges ---------- */
@@ -602,6 +761,7 @@ function updatePanelData() {
 }
 
 function renderPanel() {
+  panel.onkeydown = null;
   const n = byId[sel], c = cfg[sel], path = pathTo(sel);
   panel.replaceChildren();
   const crumbs = el("nav", "crumbs"); crumbs.setAttribute("aria-label", "Путь по воронке");
@@ -621,7 +781,7 @@ function renderPanel() {
 }
 
 function renderView(n, c, path) {
-  const edit = mini("Править", () => { editing = true; renderPanel(); });
+  const edit = mini("Править", () => { if (REMOTE && !TOKEN) { showAuth(); return; } editing = true; renderPanel(); });
   let body;
   if (c.c.length) {
     body = el("ul", "crit");
@@ -650,7 +810,7 @@ function renderView(n, c, path) {
   }
 }
 
-function changed() { refreshNode(sel); refreshStats(); saveSoon(); }
+function changed() { if (sel) dirty.add(sel); refreshNode(sel); refreshStats(); saveSoon(); }
 function selectEl(opts, value, label) {
   const s = el("select"); if (label) s.setAttribute("aria-label", label);
   opts.forEach(([v, t]) => s.appendChild(new Option(t, v)));
@@ -735,7 +895,8 @@ function renderEditor(n, c) {
   acts.appendChild(done);
   acts.appendChild(mini("Вернуть как в документе", () => { cfg[sel] = defCfg(n); recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); }, "danger"));
   panel.appendChild(acts);
-  panel.appendChild(el("p", "hint", "Изменения сохраняются автоматически. Критерий с правилом сразу меняет выборку и число должников."));
+  if (REMOTE) acts.appendChild(mini("Сменить пароль", () => showAuth("change")));
+  panel.appendChild(el("p", "hint", (REMOTE ? "Изменения сохраняются в общий файл и появляются у всех в течение 3 минут. " : "Изменения сохраняются автоматически. ") + "Критерий с правилом сразу меняет выборку и число должников."));
 }
 
 /* ---------- open-questions mode and zoom ---------- */
@@ -759,11 +920,17 @@ $("#zOut").addEventListener("click", () => { manual = true; apply(scale - 0.1); 
 $("#zFit").addEventListener("click", fit);
 addEventListener("resize", () => { if (!manual) fit(); });
 
+$("#authBtn").addEventListener("click", () => {
+  if (TOKEN) { TOKEN = null; editing = false; updateAuthBtn(); renderPanel(); setStatus("Вы вышли из режима правки", 2500); }
+  else showAuth();
+});
 /* ---------- start ---------- */
 N.forEach(n => refreshNode(n.id)); refreshStats(); fit(); select("dead");
 (async () => {
   try { DB = (await window.claude?.use("db")) || null; } catch (e) { DB = null; }
   try { DL = (await window.claude?.use("downloads")) || null; } catch (e) { DL = null; }
+  REMOTE = !DB; updateAuthBtn();
+  if (REMOTE) { await initRemote(); return; }
   const saved = await store.load();
   if (saved) { applySaved(saved); N.forEach(n => refreshNode(n.id)); refreshStats(); if (!editing) renderPanel(); }
 })();
