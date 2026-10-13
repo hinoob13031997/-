@@ -138,6 +138,12 @@ ul.crit li.q::before { background: var(--warn); border-radius: 50%; }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn[disabled] { opacity: .45; cursor: not-allowed; }
 .databar select, aside select, aside input[type=text], aside input[type=number], aside textarea { font: inherit; font-size: 13px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; min-width: 0; max-width: 100%; }
+.seg { display: inline-flex; align-items: center; gap: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--bg); }
+.seg .seg-l { font-size: 12.5px; color: var(--muted); padding: 0 8px 0 10px; }
+.seg button { font: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+.seg button.on { background: var(--accent); color: #fff; }
+:root[data-theme="dark"] .seg button.on { color: #0b1a21; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .seg button.on { color: #0b1a21; } }
 .status { font-size: 12px; color: var(--muted); font-family: var(--font-mono); min-height: 1em; }
 .node .dc { position: absolute; right: 6px; bottom: -13px; font-family: var(--font-mono); font-size: 16px; font-weight: 700; background: #ffd23f; color: #1a1a1a; border: 2px solid #1a1a1a; border-radius: 11px; padding: 0 8px; line-height: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.3); font-variant-numeric: tabular-nums; }
 :root[data-theme="dark"] .node .dc { color: #1a1a1a; }
@@ -198,6 +204,11 @@ body { margin: 0; }
     <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv" hidden>
     <select id="sheetSel" aria-label="Лист" hidden></select>
     <div class="fileinfo" id="fileinfo">Файл не загружен. Загрузите выгрузку (или перетащите сюда), и на блоках появится количество должников.</div>
+    <div class="seg" id="oldSeg" role="group" aria-label="Должники">
+      <span class="seg-l">Должники:</span>
+      <button type="button" class="on" data-v="all" aria-pressed="true">Все</button>
+      <button type="button" data-v="recent" aria-pressed="false" title="Скрыть должников, у которых дата смерти была больше 5 месяцев назад">Смерть ≤ 5 мес.</button>
+    </div>
     <select id="allMode" aria-label="Состав общего реестра" disabled>
       <option value="all">Общий реестр: все блоки с критериями</option>
       <option value="deep">Общий реестр: каждая строка в самом глубоком блоке</option>
@@ -622,13 +633,32 @@ function describeRule(r) {
   return r.col + " " + opLabel(op) + " " + (r.cmp ? "[" + r.cmp + "]" : (r.val || "…"));
 }
 
+let onlyRecent = false;
+try { onlyRecent = localStorage.getItem("funnel-recent") === "1"; } catch (e) {}
+/* строки, которые участвуют в воронке: при включённом тумблере скрыты должники, умершие больше 5 месяцев назад */
+function visibleRows() {
+  const all = Array.from({ length: DATA.rows.length }, (_, i) => i);
+  if (!onlyRecent) return all;
+  const ci = colIdx("Дата смерти"); if (ci < 0) return all;
+  const d = new Date(), thr = Date.UTC(d.getFullYear(), d.getMonth() - 5, d.getDate()), A = NORM[ci];
+  return all.filter(i => !(typeof A[i] === "number" && A[i] < thr));
+}
+function paintSeg() {
+  document.querySelectorAll("#oldSeg button").forEach(b => { const on = (b.dataset.v === "recent") === onlyRecent; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
+}
+document.querySelectorAll("#oldSeg button").forEach(b => b.addEventListener("click", () => {
+  onlyRecent = b.dataset.v === "recent"; paintSeg();
+  try { localStorage.setItem("funnel-recent", onlyRecent ? "1" : "0"); } catch (e) {}
+  if (DATA) { recalc(); if (sel) select(sel); if (onlyRecent && colIdx("Дата смерти") < 0) setStatus("В файле нет колонки «Дата смерти»", 4000); else setStatus(onlyRecent ? "Скрыты должники с датой смерти больше 5 месяцев назад: показано " + nf.format(RES.root.length) + " из " + nf.format(DATA.rows.length) : "Показаны все должники", 4000); }
+}));
+paintSeg();
 function recalc() {
   if (!DATA) { RES = null; OWN = {}; return; }
   RES = {}; OWN = {};
   N.forEach(n => {
     const tests = cfg[n.id].c.map(c => makeTest(c.r)).filter(Boolean);
     OWN[n.id] = tests.length;
-    if (!n.p) { RES[n.id] = Array.from({ length: DATA.rows.length }, (_, i) => i); return; }
+    if (!n.p) { RES[n.id] = visibleRows(); return; }
     const base = RES[n.from || n.p];
     if (!tests.length) { RES[n.id] = base; return; }
     const out = [];
@@ -776,11 +806,11 @@ function dataBlock(id) {
 }
 function updatePanelData() {
   const num = $("#tileNum"); if (!num || !sel) return;
-  const id = sel, rows = RES[id].length, total = DATA.rows.length;
+  const id = sel, rows = RES[id].length, total = RES.root.length;
   const nd = byId[id].p && !OWN[id];
   num.textContent = nd ? "—" : nf.format(rows);
   const pct = total ? (rows / total * 100) : 0;
-  $("#tileSub").textContent = "из " + nf.format(total) + " строк файла (" + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (nd ? ". Для этого блока в файле нет данных. Привяжите критерии к колонкам (режим правки), иначе число не считается." : "");
+  $("#tileSub").textContent = "из " + nf.format(total) + (onlyRecent ? " должников (без умерших более 5 мес. назад, " : " строк файла (") + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (nd ? ". Для этого блока в файле нет данных. Привяжите критерии к колонкам (режим правки), иначе число не считается." : "");
   $("#dlBlock").disabled = rows === 0 || !!nd;
   const pv = $("#prev"); pv.replaceChildren();
   if (!rows) { pv.appendChild(el("p", "empty", "В блоке нет строк.")); return; }
