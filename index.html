@@ -1331,7 +1331,30 @@ function ruleBuilder(crit) {
   draw(); return box;
 }
 function renderEditor(n, c) {
-  panel.appendChild(el("p", "hint", "Критерии блока меняются только через таблицу правил (кнопка «Загрузить таблицу правил» вверху). Здесь можно править открытые вопросы и примечание."));
+  panel.appendChild(el("p", "hint", "Тексты (название, формулировки критериев, вопросы, примечание) правятся здесь своими словами и сохраняются. Расчёт (правила отбора) меняется только через таблицу правил."));
+  const nm = el("input"); nm.type = "text"; nm.value = c.name || n.t; nm.style.width = "100%"; nm.setAttribute("aria-label", "Название блока");
+  nm.addEventListener("input", () => { c.name = nm.value.trim() === n.t0 ? "" : nm.value; n.t = nm.value.trim() || n.t0; changed(); });
+  panel.appendChild(section("Название блока", nm));
+  const cbox = el("div", "ed"), cwrap = el("div");
+  const drawC = () => {
+    cwrap.replaceChildren();
+    c.c.forEach((x, k) => {
+      const line = el("div", "line"); line.style.marginBottom = "6px";
+      const col = el("div"); col.style.flex = "1";
+      const ta = el("textarea"); ta.value = x.t; ta.rows = 2; ta.style.width = "100%"; ta.setAttribute("aria-label", "Критерий");
+      ta.addEventListener("input", () => { x.t = ta.value; changed(); });
+      col.appendChild(ta);
+      col.appendChild(el("span", "rulechip" + (x.r ? "" : " none"), x.r ? "Правило (из таблицы): " + describeRule(x.r) : "Пояснение, на выборку не влияет"));
+      line.appendChild(col);
+      if (!x.r) line.appendChild(mini("Удалить", () => { c.c.splice(k, 1); drawC(); changed(); }, "danger"));
+      cwrap.appendChild(line);
+    });
+    if (!c.c.length) cwrap.appendChild(el("p", "hint", "Критериев нет."));
+  };
+  drawC(); cbox.appendChild(cwrap);
+  cbox.appendChild(mini("+ Добавить пояснение", () => { c.c.push({ t: "", r: null }); drawC(); changed(); }));
+  panel.appendChild(section("Критерии блока (текст)", cbox));
+
 
   const qbox = el("div", "ed"), qwrap = el("div");
   const drawQ = () => {
@@ -1360,7 +1383,7 @@ function renderEditor(n, c) {
   acts.appendChild(mini("Вернуть критерии по умолчанию", () => { cfg[sel] = defCfg(n); recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); }, "danger"));
   panel.appendChild(acts);
   if (REMOTE) acts.appendChild(mini("Сменить пароль", () => showAuth("change")));
-  panel.appendChild(el("p", "hint", (REMOTE ? "Изменения сохраняются в общий файл и появляются у всех в течение 3 минут. " : "Изменения сохраняются автоматически. ") + "Критерии блоков меняются через таблицу правил. Здесь правятся открытые вопросы и примечания."));
+  panel.appendChild(el("p", "hint", (REMOTE ? "Изменения сохраняются в общий файл и появляются у всех в течение 3 минут. " : "Изменения сохраняются автоматически. ") + "Правила расчёта меняются через таблицу правил; при её загрузке тексты блоков заменяются текстами из таблицы."));
 }
 
 /* ---------- open-questions mode and zoom ---------- */
