@@ -356,10 +356,11 @@ function applySaved(obj) {
     if (v2) {
       cfg[n.id] = {
         c: Array.isArray(s.c) ? s.c.map(x => ({ t: String(x.t || ""), r: x.r && x.r.col ? x.r : null })) : d.c, q, n: nt,
-        l: s.l === "or" ? "or" : "", from: typeof s.from === "string" ? s.from : "", sub: Array.isArray(s.sub) ? s.sub.map(String) : [], name: typeof s.name === "string" ? s.name : ""
+        l: s.l === "or" ? "or" : "", from: typeof s.from === "string" ? s.from : "", sub: Array.isArray(s.sub) ? s.sub.map(String) : [], name: typeof s.name === "string" ? s.name : "",
+        txt: Array.isArray(s.txt) ? s.txt.map(String) : null, uname: typeof s.uname === "string" ? s.uname : ""
       };
     } else cfg[n.id] = Object.assign({}, d, { q, n: nt }); /* старый формат: критерии берутся из таблицы правил по умолчанию */
-    n.t = cfg[n.id].name || n.t0;
+    n.t = cfg[n.id].uname || cfg[n.id].name || n.t0;
   });
 }
 
@@ -515,7 +516,7 @@ function showAuth(mode) {
         AUTH = obj;
         const r = await ghGet("config.json").catch(() => null); if (r) { if (r.sha) cfgSha = r.sha; applySaved(r.json.cfg); repaintAll(); }
       }
-      if (pendingTable) { N.forEach(n => { cfg[n.id] = pendingTable[n.id]; n.t = cfg[n.id].name || n.t0; dirty.add(n.id); }); pendingTable = null; repaintAll(); store.save(); }
+      if (pendingTable) { N.forEach(n => { cfg[n.id] = pendingTable[n.id]; n.t = cfg[n.id].uname || cfg[n.id].name || n.t0; dirty.add(n.id); }); pendingTable = null; repaintAll(); store.save(); }
       editing = true; updateAuthBtn(); setStatus(mode === "change" ? "Пароль изменён" : "Режим правки включён", 3000); renderPanel();
     } catch (e) { fail("Ошибка: " + (e.message || e)); }
     finally { go.disabled = false; }
@@ -1045,8 +1046,8 @@ async function loadRulesFile(file) {
     const { blocks, warns, missing } = parseRulesTable(wb);
     Object.entries(blocks).forEach(([code, b]) => {
       const n = byId[code], d = cfg[code], nm = b.name && b.name !== n.t0 ? b.name : "";
-      cfg[code] = { c: b.rows, q: d.q, n: d.n, l: /или/i.test(b.logic) ? "or" : "", from: b.from, sub: b.sub, name: nm };
-      n.t = nm || n.t0;
+      cfg[code] = { c: b.rows, q: d.q, n: d.n, l: /или/i.test(b.logic) ? "or" : "", from: b.from, sub: b.sub, name: nm, txt: d.txt || null, uname: d.uname || "" };
+      n.t = cfg[code].uname || nm || n.t0;
     });
     cfg.__v = 2;
     if (typeof dirty !== "undefined") N.forEach(n => dirty.add(n.id));
@@ -1249,7 +1250,16 @@ function renderPanel() {
 function renderView(n, c, path) {
   const edit = mini("Править", () => { if (REMOTE && !TOKEN) { showAuth(); return; } editing = true; renderPanel(); });
   let body;
-  if (c.c.length) {
+  if (c.txt) {
+    body = el("div");
+    if (c.txt.length) { const ul = el("ul", "crit"); c.txt.forEach(t => ul.appendChild(el("li", null, t))); body.appendChild(ul); }
+    else body.appendChild(el("p", "empty", "Формулировки не заданы."));
+    if (c.c.length) {
+      const det = el("details"); det.appendChild(el("summary", null, "Правила расчёта из таблицы (" + c.c.length + ")"));
+      const ul = el("ul", "crit"); c.c.forEach(x => { const li = el("li", null, x.t); if (x.r) li.appendChild(el("span", "rulechip", "Правило: " + describeRule(x.r) + (DATA && colIdx(x.r.col) < 0 ? " (колонки нет в файле)" : ""))); ul.appendChild(li); });
+      det.appendChild(ul); body.appendChild(det);
+    }
+  } else if (c.c.length) {
     body = el("ul", "crit");
     c.c.forEach(x => {
       const li = el("li", null, x.t);
@@ -1273,11 +1283,11 @@ function renderView(n, c, path) {
     ks.forEach(k => { const b = el("button", null, k.t.replace(/\s*\(.*\)$/, "")); b.type = "button"; b.addEventListener("click", () => select(k.id)); box.appendChild(b); });
     panel.appendChild(section("Дальше по воронке", box));
   }
-  const anc = path.slice(0, -1).filter(p => cfg[p.id].c.length);
+  const anc = path.slice(0, -1).filter(p => cfg[p.id].c.length || (cfg[p.id].txt && cfg[p.id].txt.length));
   if (anc.length) {
     const wrap = el("div", "inh"), det = el("details");
     det.appendChild(el("summary", null, "Условия вышестоящих блоков (" + anc.length + ")"));
-    anc.forEach(p => { const r = el("div", "row"); r.appendChild(el("b", null, p.t)); r.appendChild(el("span", null, cfg[p.id].c.map(x => x.t).join("; "))); det.appendChild(r); });
+    anc.forEach(p => { const r = el("div", "row"); r.appendChild(el("b", null, p.t)); r.appendChild(el("span", null, (cfg[p.id].txt || cfg[p.id].c.map(x => x.t)).join("; "))); det.appendChild(r); });
     wrap.appendChild(det); panel.appendChild(wrap);
   }
 }
@@ -1331,29 +1341,31 @@ function ruleBuilder(crit) {
   draw(); return box;
 }
 function renderEditor(n, c) {
-  panel.appendChild(el("p", "hint", "Тексты (название, формулировки критериев, вопросы, примечание) правятся здесь своими словами и сохраняются. Расчёт (правила отбора) меняется только через таблицу правил."));
-  const nm = el("input"); nm.type = "text"; nm.value = c.name || n.t; nm.style.width = "100%"; nm.setAttribute("aria-label", "Название блока");
-  nm.addEventListener("input", () => { c.name = nm.value.trim() === n.t0 ? "" : nm.value; n.t = nm.value.trim() || n.t0; changed(); });
+  panel.appendChild(el("p", "hint", "Название, формулировки критериев, вопросы и примечание правятся здесь своими словами и сохраняются; загрузка таблицы правил их не затирает. Расчёт (правила отбора) меняется только через таблицу."));
+  const nm = el("input"); nm.type = "text"; nm.value = c.uname || c.name || n.t0; nm.style.width = "100%"; nm.setAttribute("aria-label", "Название блока");
+  nm.addEventListener("input", () => { c.uname = nm.value.trim(); n.t = c.uname || c.name || n.t0; changed(); });
   panel.appendChild(section("Название блока", nm));
+  if (!c.txt) c.txt = c.c.map(x => x.t);
   const cbox = el("div", "ed"), cwrap = el("div");
   const drawC = () => {
     cwrap.replaceChildren();
-    c.c.forEach((x, k) => {
+    c.txt.forEach((t, k) => {
       const line = el("div", "line"); line.style.marginBottom = "6px";
-      const col = el("div"); col.style.flex = "1";
-      const ta = el("textarea"); ta.value = x.t; ta.rows = 2; ta.style.width = "100%"; ta.setAttribute("aria-label", "Критерий");
-      ta.addEventListener("input", () => { x.t = ta.value; changed(); });
-      col.appendChild(ta);
-      col.appendChild(el("span", "rulechip" + (x.r ? "" : " none"), x.r ? "Правило (из таблицы): " + describeRule(x.r) : "Пояснение, на выборку не влияет"));
-      line.appendChild(col);
-      if (!x.r) line.appendChild(mini("Удалить", () => { c.c.splice(k, 1); drawC(); changed(); }, "danger"));
+      const ta = el("textarea"); ta.value = t; ta.rows = 2; ta.setAttribute("aria-label", "Критерий");
+      ta.addEventListener("input", () => { c.txt[k] = ta.value; changed(); });
+      line.appendChild(ta); line.appendChild(mini("Удалить", () => { c.txt.splice(k, 1); drawC(); changed(); }, "danger"));
       cwrap.appendChild(line);
     });
-    if (!c.c.length) cwrap.appendChild(el("p", "hint", "Критериев нет."));
+    if (!c.txt.length) cwrap.appendChild(el("p", "hint", "Формулировок нет."));
   };
   drawC(); cbox.appendChild(cwrap);
-  cbox.appendChild(mini("+ Добавить пояснение", () => { c.c.push({ t: "", r: null }); drawC(); changed(); }));
-  panel.appendChild(section("Критерии блока (текст)", cbox));
+  cbox.appendChild(mini("+ Добавить критерий", () => { c.txt.push(""); drawC(); changed(); }));
+  if (c.c.length) {
+    const rl = el("div"); rl.appendChild(el("p", "hint", "Правила расчёта (из таблицы, здесь не правятся):"));
+    const ul = el("ul", "crit"); c.c.forEach(x => { const li = el("li", null, x.t); if (x.r) li.appendChild(el("span", "rulechip", "Правило: " + describeRule(x.r))); ul.appendChild(li); });
+    rl.appendChild(ul); cbox.appendChild(rl);
+  }
+  panel.appendChild(section("Критерии блока", cbox));
 
 
   const qbox = el("div", "ed"), qwrap = el("div");
@@ -1378,12 +1390,12 @@ function renderEditor(n, c) {
 
   const acts = el("div", "actions");
   const done = el("button", "btn primary", "Готово"); done.type = "button";
-  done.addEventListener("click", () => { c.c = c.c.filter(x => x.t.trim()); c.q = c.q.filter(t => t.trim()); editing = false; recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); });
+  done.addEventListener("click", () => { if (c.txt) c.txt = c.txt.filter(t => t.trim()); c.q = c.q.filter(t => t.trim()); editing = false; recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); });
   acts.appendChild(done);
   acts.appendChild(mini("Вернуть критерии по умолчанию", () => { cfg[sel] = defCfg(n); recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); }, "danger"));
   panel.appendChild(acts);
   if (REMOTE) acts.appendChild(mini("Сменить пароль", () => showAuth("change")));
-  panel.appendChild(el("p", "hint", (REMOTE ? "Изменения сохраняются в общий файл и появляются у всех в течение 3 минут. " : "Изменения сохраняются автоматически. ") + "Правила расчёта меняются через таблицу правил; при её загрузке тексты блоков заменяются текстами из таблицы."));
+  panel.appendChild(el("p", "hint", (REMOTE ? "Изменения сохраняются в общий файл и появляются у всех в течение 3 минут. " : "Изменения сохраняются автоматически. ") + "Правила расчёта меняются через таблицу правил; ваши формулировки при её загрузке не затираются."));
 }
 
 /* ---------- open-questions mode and zoom ---------- */
