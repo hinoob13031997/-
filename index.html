@@ -147,6 +147,9 @@ ul.crit li.q::before { background: var(--warn); border-radius: 50%; }
 .rulesinfo { flex: 1 1 100%; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
 .rulesinfo b { color: var(--fg); }
 .rulesinfo .w { color: #b4540a; display: block; }
+.amt { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); min-height: 34px; }
+.amt input { width: 96px; font: inherit; font-size: 13px; font-weight: 600; color: var(--fg); background: transparent; border: 0; border-bottom: 1px solid var(--line); padding: 3px 2px; text-align: right; }
+.amt input:focus { outline: none; border-bottom-color: var(--accent); }
 .status { font-size: 12px; color: var(--muted); font-family: var(--font-mono); min-height: 1em; }
 .node .dc { position: absolute; right: 6px; bottom: -13px; font-family: var(--font-mono); font-size: 16px; font-weight: 700; background: #ffd23f; color: #1a1a1a; border: 2px solid #1a1a1a; border-radius: 11px; padding: 0 8px; line-height: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.3); font-variant-numeric: tabular-nums; }
 :root[data-theme="dark"] .node .dc { color: #1a1a1a; }
@@ -214,6 +217,7 @@ body { margin: 0; }
       <button type="button" class="on" data-v="all" aria-pressed="true">Все</button>
       <button type="button" data-v="recent" aria-pressed="false" title="Скрыть должников, у которых дата смерти была больше 5 месяцев назад">Смерть ≤ 5 мес.</button>
     </div>
+    <label class="amt" title="Должники с остатком долга + ГП меньше этой суммы скрываются на схеме"><span>Остаток долга + ГП, от</span><input id="minAmt" type="text" inputmode="numeric" placeholder="0" autocomplete="off" aria-label="Минимальная сумма, руб."><span>руб.</span></label>
     <select id="allMode" aria-label="Состав общего реестра" disabled>
       <option value="all">Общий реестр: все блоки с критериями</option>
       <option value="deep">Общий реестр: каждая строка в самом глубоком блоке</option>
@@ -665,12 +669,27 @@ let onlyRecent = false;
 try { onlyRecent = localStorage.getItem("funnel-recent") === "1"; } catch (e) {}
 /* строки, которые участвуют в воронке: при включённом тумблере скрыты должники, умершие больше 5 месяцев назад */
 const nRows = () => DATA.big ? DATA.n : DATA.rows.length;
+const AMT_COL = "Сумма долга + ГП Остаток";
+let minAmt = 0;
+try { minAmt = Number(localStorage.getItem("funnel-minamt")) || 0; } catch (e) {}
 function visibleRows() {
-  const all = Array.from({ length: nRows() }, (_, i) => i);
-  if (!onlyRecent) return all;
-  const ci = colIdx("Дата смерти"); if (ci < 0 || !NORM[ci]) return all;
-  const d = new Date(), thr = Date.UTC(d.getFullYear(), d.getMonth() - 5, d.getDate()), A = NORM[ci];
-  return all.filter(i => !(typeof A[i] === "number" && A[i] < thr));
+  let all = Array.from({ length: nRows() }, (_, i) => i);
+  if (onlyRecent) {
+    const ci = colIdx("Дата смерти");
+    if (ci >= 0 && NORM[ci]) { const d = new Date(), thr = Date.UTC(d.getFullYear(), d.getMonth() - 5, d.getDate()), A = NORM[ci]; all = all.filter(i => !(typeof A[i] === "number" && A[i] < thr)); }
+  }
+  if (minAmt > 0) {
+    const ci = colIdx(AMT_COL);
+    if (ci >= 0 && NORM[ci]) { const A = NORM[ci]; all = all.filter(i => typeof A[i] === "number" && A[i] >= minAmt); }
+  }
+  return all;
+}
+function filterStatus() {
+  if (!DATA || !RES) return;
+  if (minAmt > 0 && colIdx(AMT_COL) < 0) { setStatus("В файле нет колонки «" + AMT_COL + "»", 5000); return; }
+  if (!onlyRecent && !(minAmt > 0)) { setStatus("Фильтры сняты: показаны все должники", 4000); return; }
+  const parts = []; if (onlyRecent) parts.push("смерть не позже 5 месяцев назад"); if (minAmt > 0) parts.push("остаток долга + ГП от " + nf.format(minAmt) + " ₽");
+  setStatus("Фильтры: " + parts.join(", ") + ". Показано " + nf.format(RES.root.length) + " из " + nf.format(nRows()), 6000);
 }
 function paintSeg() {
   document.querySelectorAll("#oldSeg button").forEach(b => { const on = (b.dataset.v === "recent") === onlyRecent; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
@@ -678,9 +697,23 @@ function paintSeg() {
 document.querySelectorAll("#oldSeg button").forEach(b => b.addEventListener("click", () => {
   onlyRecent = b.dataset.v === "recent"; paintSeg();
   try { localStorage.setItem("funnel-recent", onlyRecent ? "1" : "0"); } catch (e) {}
-  if (DATA) { recalc(); if (sel) select(sel); if (onlyRecent && colIdx("Дата смерти") < 0) setStatus("В файле нет колонки «Дата смерти»", 4000); else setStatus(onlyRecent ? "Скрыты должники с датой смерти больше 5 месяцев назад: показано " + nf.format(RES.root.length) + " из " + nf.format(nRows()) : "Показаны все должники", 4000); }
+  if (DATA) { recalc(); if (sel) select(sel); if (onlyRecent && colIdx("Дата смерти") < 0) setStatus("В файле нет колонки «Дата смерти»", 4000); else filterStatus(); }
 }));
 paintSeg();
+{
+  const inp = $("#minAmt"); if (minAmt > 0) inp.value = nf.format(minAmt);
+  let tm;
+  inp.addEventListener("input", () => {
+    clearTimeout(tm);
+    tm = setTimeout(() => {
+      const v = Number(String(inp.value).replace(/[\s\u00a0]/g, "").replace(",", "."));
+      minAmt = isFinite(v) && v > 0 ? v : 0;
+      try { localStorage.setItem("funnel-minamt", String(minAmt)); } catch (e) {}
+      if (DATA) { recalc(); if (sel) select(sel); filterStatus(); }
+    }, 450);
+  });
+  inp.addEventListener("blur", () => { inp.value = minAmt > 0 ? nf.format(minAmt) : ""; });
+}
 function recalc() {
   if (!DATA) { RES = null; OWN = {}; return; }
   if (bigMissing() && !bigBusy) { setStatus("Подгружаю колонку из файла…"); bigLoad(DATA.f, DATA.sheet, DATA.ctx); return; }
@@ -845,7 +878,7 @@ async function forEachDataRow(file, ctx, path, onHeader, onRow, prog) {
   }, prog);
 }
 function neededColNames() {
-  const s = new Set(["Дата смерти"]);
+  const s = new Set(["Дата смерти", "Сумма долга + ГП Остаток"]);
   N.forEach(n => cfg[n.id].c.forEach(c => { const r = c.r; if (r && r.col) { s.add(r.col); if (r.cmp) s.add(r.cmp); if (r.col === "Дата Исполнительного документа") s.add("№ Исполнительного документа"); } }));
   return s;
 }
@@ -1169,7 +1202,7 @@ function updatePanelData() {
   const nd = byId[id].p && !OWN[id];
   num.textContent = nd ? "—" : nf.format(rows);
   const pct = total ? (rows / total * 100) : 0;
-  $("#tileSub").textContent = "из " + nf.format(total) + (onlyRecent ? " должников (без умерших более 5 мес. назад, " : " строк файла (") + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (nd ? ". Для этого блока в файле нет данных. Задайте критерии в таблице правил, иначе число не считается." : "");
+  $("#tileSub").textContent = "из " + nf.format(total) + ((onlyRecent || minAmt > 0) ? " должников (с учётом фильтров, " : " строк файла (") + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (nd ? ". Для этого блока в файле нет данных. Задайте критерии в таблице правил, иначе число не считается." : "");
   $("#dlBlock").disabled = rows === 0 || !!nd;
   const pv = $("#prev"); pv.replaceChildren();
   if (!rows) { pv.appendChild(el("p", "empty", "В блоке нет строк.")); return; }
