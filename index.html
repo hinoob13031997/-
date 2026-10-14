@@ -144,6 +144,9 @@ ul.crit li.q::before { background: var(--warn); border-radius: 50%; }
 .seg button.on { background: var(--accent); color: #fff; }
 :root[data-theme="dark"] .seg button.on { color: #0b1a21; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .seg button.on { color: #0b1a21; } }
+.rulesinfo { flex: 1 1 100%; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
+.rulesinfo b { color: var(--fg); }
+.rulesinfo .w { color: #b4540a; display: block; }
 .status { font-size: 12px; color: var(--muted); font-family: var(--font-mono); min-height: 1em; }
 .node .dc { position: absolute; right: 6px; bottom: -13px; font-family: var(--font-mono); font-size: 16px; font-weight: 700; background: #ffd23f; color: #1a1a1a; border: 2px solid #1a1a1a; border-radius: 11px; padding: 0 8px; line-height: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.3); font-variant-numeric: tabular-nums; }
 :root[data-theme="dark"] .node .dc { color: #1a1a1a; }
@@ -202,6 +205,8 @@ body { margin: 0; }
   <div class="databar" id="databar">
     <label class="btn primary" for="file" style="cursor:pointer">Загрузить Excel</label>
     <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv" hidden>
+    <label class="btn" for="rulesFile" style="cursor:pointer" title="Таблица с критериями отбора по блокам">Загрузить таблицу правил</label>
+    <input type="file" id="rulesFile" accept=".xlsx,.xls" hidden>
     <select id="sheetSel" aria-label="Лист" hidden></select>
     <div class="fileinfo" id="fileinfo">Файл не загружен. Загрузите выгрузку (или перетащите сюда), и на блоках появится количество должников.</div>
     <div class="seg" id="oldSeg" role="group" aria-label="Должники">
@@ -215,6 +220,7 @@ body { margin: 0; }
     </select>
     <button class="btn" id="allBtn" disabled>Скачать общий реестр</button>
     <span class="status" id="status" role="status"></span>
+    <div class="rulesinfo" id="rulesInfo" hidden></div>
   </div>
 
   <div class="legend">
@@ -255,12 +261,12 @@ const N = [
 
  {id:"A1", p:"A", t:"Правопреемство на стороне должника", x:135, y:262, w:200, d:"Замена должника на наследников. Критерии заданы по этапам ниже."},
  {id:"A1s", p:"A1", t:"На подаче", x:135, y:342, w:190, c:["Замена взыскателя установлена","Срок предъявления ИД не истёк"]},
- {id:"A1c", p:"A1s", union:true, t:"На рассмотрении в суде", x:135, y:422, w:190, c:["Рабочий статус: Контроль Наследство","Рабочий статус: Отправка Наследство ГАС"]},
+ {id:"A1c", p:"A1s", t:"На рассмотрении в суде", x:135, y:422, w:190, c:["Рабочий статус: Контроль Наследство","Рабочий статус: Отправка Наследство ГАС"]},
  {id:"A1r", p:"A1c", t:"Результат", x:135, y:502, w:190, d:"Исход рассмотрения заявления о правопреемстве."},
  {id:"A1n", p:"A1r", t:"Отказ", x:75, y:592, w:118, k:"result"},
  {id:"A1o", p:"A1r", t:"Удовлетворено", x:205, y:592, w:118, k:"result", c:["Есть определение о замене должника"]},
  {id:"A1na", p:"A1n", t:"Архив", x:60, y:682, w:112, k:"final", c:["Определение об отказе в ПП + статус «Стоп работа»"]},
- {id:"A1nb", p:"A1n", from:"A", t:"Обжалуем", x:190, y:682, w:112, k:"final", c:["Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»"], q:["Критерии обжалования сформулировать"]},
+ {id:"A1nb", p:"A1n", t:"Обжалуем", x:190, y:682, w:112, k:"final", c:["Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»"], q:["Критерии обжалования сформулировать"]},
 
  {id:"A2", p:"A", t:"Правопреемство на стороне взыскателя", x:425, y:262, w:200, d:"Замена взыскателя (цессия). После удовлетворения блок возвращается в правопреемство на стороне должника."},
  {id:"A2s", p:"A2", t:"На подаче", x:425, y:342, w:190,
@@ -287,7 +293,7 @@ const N = [
  {id:"Inb", p:"In", t:"Обжалуем", x:990, y:762, w:112, k:"final", q:["Критерии обжалования сформулировать"]}
 ];
 const KIND = {root:"Исходная группа", group:"Сегмент", stage:"Этап", result:"Исход суда", final:"Дальнейшее действие"};
-const byId = Object.fromEntries(N.map(n => { n.k = n.k || "stage"; n.c = n.c || []; n.q = n.q || []; return [n.id, n]; }));
+const byId = Object.fromEntries(N.map(n => { n.k = n.k || "stage"; n.c = n.c || []; n.q = n.q || []; n.t0 = n.t; return [n.id, n]; }));
 const kids = id => N.filter(n => n.p === id);
 const pathTo = id => { const r = []; for (let n = byId[id]; n; n = byId[n.p]) r.unshift(n); return r; };
 const $ = s => document.querySelector(s);
@@ -297,28 +303,15 @@ const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) 
 const nf = new Intl.NumberFormat("ru-RU");
 
 /* ---------- editable config (criteria, questions, notes) ---------- */
-const R = (col, op, val) => ({ col, op, val: val == null ? "" : String(val), cmp: "" });
-const DEFR = {
-  dead: { "Есть дата смерти": R("Дата смерти", "filled") },
-  A: { "Долг просужен": R("Дата Исполнительного документа", "filled"), "Дата СА < Дата смерти": { col: "Дата Исполнительного документа", op: "lt", val: "", cmp: "Дата смерти" } },
-  B: { "СА отсутствует": R("Дата Исполнительного документа", "empty") },
-  Bm: { "Срок окончания КД больше 3 лет назад": R("Срок займа, дата", "older", 3) },
-  Ba: { "Срок окончания КД меньше 3 лет назад": R("Срок займа, дата", "newer", 3) },
-  A1o: { "Есть определение о замене должника": R("Наличие определения о замене должника.", "eq", "Да") },
-  A1c: { "Рабочий статус: Контроль Наследство": R("Рабочий статус", "eq", "Контроль Наследство"), "Рабочий статус: Отправка Наследство ГАС": R("Рабочий статус", "eq", "Отправка Наследство ГАС") },
-  A1nb: { "Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»": R("Рабочий статус", "eq", "ЧЖ отказ Правопреемство") },
-  A1s: { "Замена взыскателя установлена": R("Наличие определения о замене взыскателя", "eq", "Да"), "Срок предъявления ИД не истёк": R("Дата окончания ИП", "emptynewer", 3) },
-  A2s: { "Долг просужен цедентом": R("Дата Исполнительного документа", "filled"), "Замена взыскателя не установлена": R("Наличие определения о замене взыскателя", "eq", "Нет"), "Срок предъявления ИД не истёк": R("Дата окончания ИП", "emptynewer", 3), "Наличие имущества (по обогащению или залог)": R("Есть имущество по обогащению", "eq", 1), "Сумма по ИП более 100 000 руб.": R("Сумма долга по ИП", "gt", 100000) },
-  I: { "Наличие имущества (обогащение или залог)": R("Есть имущество по обогащению", "eq", 1), "Сумма по АПП ≥ 100 000 руб.": R("Сумма долга по Цессии", "ge", 100000) }
+/* Правила по умолчанию = таблица правил (лист «Правила»). Загруженная таблица заменяет их целиком. */
+const DEFTBL = {"root":{"l":"","from":"","sub":[],"rows":[]},"dead":{"l":"","from":"","sub":[],"rows":[{"t":"Есть дата смерти","r":{"col":"Дата смерти","op":"filled","val":"","cmp":""}}]},"A":{"l":"","from":"","sub":[],"rows":[{"t":"Долг просужен","r":{"col":"Дата Исполнительного документа","op":"filled","val":"","cmp":""}},{"t":"Дата СА < Дата смерти","r":{"col":"Дата Исполнительного документа","op":"lt","val":"","cmp":"Дата смерти"}}]},"B":{"l":"","from":"","sub":[],"rows":[{"t":"СА отсутствует","r":{"col":"Дата Исполнительного документа","op":"empty","val":"","cmp":""}},{"t":"СА недействителен (данных нет, провести анализ)","r":null}]},"A1":{"l":"","from":"","sub":[],"rows":[]},"A1s":{"l":"","from":"","sub":["A1c","A1o","A1na","A1nb"],"rows":[{"t":"Замена взыскателя установлена","r":{"col":"Наличие определения о замене взыскателя","op":"eq","val":"Да","cmp":""}},{"t":"Срок предъявления ИД не истёк (дата окончания ИП + 3 года; пусто = не окончено)","r":{"col":"Дата окончания ИП","op":"emptynewer","val":"3","cmp":""}}]},"A1c":{"l":"","from":"A1","sub":[],"rows":[{"t":"Рабочий статус: наследство (контроль, отправка в ГАС, повторно)","r":{"col":"Рабочий статус","op":"in","val":"Отправка Наследство ГАС; Контроль Наследство; Наследство повторно; Наследство","cmp":""}}]},"A1r":{"l":"","from":"","sub":[],"rows":[]},"A1n":{"l":"","from":"A1","sub":[],"rows":[{"t":"Есть определение об отказе в замене","r":{"col":"Наличие определения об отказе в замене","op":"eq","val":"Да","cmp":""}}]},"A1o":{"l":"","from":"A1","sub":[],"rows":[{"t":"Есть определение о замене должника","r":{"col":"Наличие определения о замене должника.","op":"eq","val":"Да","cmp":""}}]},"A1na":{"l":"","from":"","sub":[],"rows":[{"t":"Определение об отказе в ПП + статус «Стоп работа»","r":{"col":"Рабочий статус","op":"eq","val":"Стоп работа","cmp":""}}]},"A1nb":{"l":"","from":"","sub":[],"rows":[{"t":"Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»","r":{"col":"Рабочий статус","op":"eq","val":"ЧЖ отказ Правопреемство","cmp":""}}]},"A2":{"l":"","from":"","sub":[],"rows":[]},"A2s":{"l":"","from":"","sub":["A2c","A2o","A2na","A2nb"],"rows":[{"t":"Долг просужен цедентом","r":{"col":"Дата Исполнительного документа","op":"filled","val":"","cmp":""}},{"t":"Замена взыскателя не установлена","r":{"col":"Наличие определения о замене взыскателя","op":"eq","val":"Нет","cmp":""}},{"t":"Срок предъявления ИД не истёк (дата окончания ИП + 3 года; пусто = не окончено)","r":{"col":"Дата окончания ИП","op":"emptynewer","val":"3","cmp":""}},{"t":"Наличие имущества (по обогащению или залог)","r":{"col":"Есть имущество по обогащению","op":"eq","val":"1","cmp":""}},{"t":"Сумма по ИП более 100 000 руб.","r":{"col":"Сумма долга по ИП","op":"gt","val":"100000","cmp":""}}]},"A2c":{"l":"","from":"A2","sub":[],"rows":[{"t":"Рабочий статус: замена взыскателя (контроль, повторно)","r":{"col":"Рабочий статус","op":"in","val":"Замена взыскателя контроль; Замена взыскателя; Замена взыскателя повторно","cmp":""}}]},"A2r":{"l":"","from":"","sub":[],"rows":[]},"A2n":{"l":"","from":"A2","sub":[],"rows":[{"t":"Есть определение об отказе в замене","r":{"col":"Наличие определения об отказе в замене","op":"eq","val":"Да","cmp":""}}]},"A2o":{"l":"","from":"A2","sub":[],"rows":[{"t":"Есть определение о замене взыскателя","r":{"col":"Наличие определения о замене взыскателя","op":"eq","val":"Да","cmp":""}}]},"A2na":{"l":"","from":"","sub":[],"rows":[{"t":"Критерии архива не заданы","r":null}]},"A2nb":{"l":"","from":"","sub":[],"rows":[{"t":"Критерии обжалования сформулировать","r":null}]},"Bm":{"l":"","from":"","sub":[],"rows":[{"t":"Срок окончания КД больше 3 лет назад","r":{"col":"Срок займа, дата","op":"older","val":"3","cmp":""}}]},"Ba":{"l":"","from":"","sub":[],"rows":[{"t":"Срок окончания КД меньше 3 лет назад","r":{"col":"Срок займа, дата","op":"newer","val":"3","cmp":""}}]},"I":{"l":"","from":"","sub":[],"rows":[{"t":"Наличие КД","r":null},{"t":"Наличие имущества (обогащение или залог)","r":{"col":"Есть имущество по обогащению","op":"eq","val":"1","cmp":""}},{"t":"Сумма по АПП ≥ 100 000 руб.","r":{"col":"Сумма долга по Цессии","op":"ge","val":"100000","cmp":""}}]},"Is":{"l":"","from":"","sub":["Ic","Io","Ina","Inb","Iw"],"rows":[]},"Ic":{"l":"","from":"I","sub":[],"rows":[{"t":"Рабочий статус: иск наследство (контроль, повторно)","r":{"col":"Рабочий статус","op":"in","val":"Иск наследство контроль; Иск наследство повторно; Иск наследство","cmp":""}}]},"Ir":{"l":"","from":"","sub":[],"rows":[]},"Iw":{"l":"","from":"","sub":[],"rows":[{"t":"Стоимость имущества","r":null}]},"In":{"l":"","from":"","sub":[],"rows":[]},"Io":{"l":"","from":"","sub":[],"rows":[]},"Ina":{"l":"","from":"","sub":[],"rows":[]},"Inb":{"l":"","from":"","sub":[],"rows":[{"t":"Критерии обжалования сформулировать","r":null}]}};
+const defCfg = n => {
+  const d = DEFTBL[n.id] || { rows: n.c.map(t => ({ t, r: null })) };
+  return { c: d.rows.map(x => ({ t: x.t, r: x.r ? Object.assign({}, x.r) : null })), q: n.q.slice(), n: n.n || "", l: d.l || "", from: d.from || "", sub: (d.sub || []).slice(), name: "" };
 };
-const defRule = (id, t) => { const r = DEFR[id] && DEFR[id][t]; return r ? Object.assign({}, r) : null; };
-const defCfg = n => ({ c: n.c.map(t => ({ t, r: defRule(n.id, t) })), q: n.q.slice(), n: n.n || "" });
-const LEGACY_DROP = new Set(["Замена взыскателя", "Наличие имущества"]);
-const LEGACY_REN = { "Дата ИД": "Дата Исполнительного документа", "Сумма долга по цессии": "Сумма долга по Цессии" };
-const mapCrit = (id, x) => { let r = x.r && x.r.col ? x.r : null; if (r && LEGACY_DROP.has(r.col)) r = null; else if (r && LEGACY_REN[r.col]) r = Object.assign({}, r, { col: LEGACY_REN[r.col] }); const o0 = x.off && !r;
-  x = { t: x.t, r, off: o0 }; return mapCrit2(id, x); };
-const mapCrit2 = (id, x) => { const r = x.r, o = { t: String(x.t || ""), r: r || (x.off ? null : defRule(id, String(x.t || ""))) }; if (x.off && !r) o.off = true; return o; };
 const cfg = Object.fromEntries(N.map(n => [n.id, defCfg(n)]));
+cfg.__v = 2;
+let pendingTable = null;
 let editing = false;
 
 const statusEl = $("#status");
@@ -346,13 +339,18 @@ let saveTimer = null;
 const saveSoon = () => { setStatus("Сохраняю…"); clearTimeout(saveTimer); saveTimer = setTimeout(() => store.save(), 600); };
 function applySaved(obj) {
   if (!obj || typeof obj !== "object") return;
+  const v2 = obj.__v >= 2;
   N.forEach(n => {
     const s = obj[n.id]; if (!s) return;
-    cfg[n.id] = {
-      c: Array.isArray(s.c) ? s.c.map(x => mapCrit(n.id, x)) : cfg[n.id].c,
-      q: Array.isArray(s.q) ? s.q.map(String) : cfg[n.id].q,
-      n: typeof s.n === "string" ? s.n : cfg[n.id].n
-    };
+    const d = cfg[n.id];
+    const q = Array.isArray(s.q) ? s.q.map(String) : d.q, nt = typeof s.n === "string" ? s.n : d.n;
+    if (v2) {
+      cfg[n.id] = {
+        c: Array.isArray(s.c) ? s.c.map(x => ({ t: String(x.t || ""), r: x.r && x.r.col ? x.r : null })) : d.c, q, n: nt,
+        l: s.l === "or" ? "or" : "", from: typeof s.from === "string" ? s.from : "", sub: Array.isArray(s.sub) ? s.sub.map(String) : [], name: typeof s.name === "string" ? s.name : ""
+      };
+    } else cfg[n.id] = Object.assign({}, d, { q, n: nt }); /* старый формат: критерии берутся из таблицы правил по умолчанию */
+    n.t = cfg[n.id].name || n.t0;
   });
 }
 
@@ -408,7 +406,7 @@ async function saveRemote() {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const names = [...dirty].map(id => byId[id].t).join(", ").slice(0, 120);
-        const sha = await ghPut("config.json", { v: 1, updated: new Date().toISOString(), cfg }, "Критерии воронки: " + (names || "обновление"), cfgSha);
+        const sha = await ghPut("config.json", { v: 2, updated: new Date().toISOString(), cfg }, "Критерии воронки: " + (names || "обновление"), cfgSha);
         cfgSha = sha; dirty.clear(); setStatus("Сохранено для всех", 3000); break;
       } catch (e) {
         if (e.status === 409 || e.status === 422) {
@@ -508,6 +506,7 @@ function showAuth(mode) {
         AUTH = obj;
         const r = await ghGet("config.json").catch(() => null); if (r) { if (r.sha) cfgSha = r.sha; applySaved(r.json.cfg); repaintAll(); }
       }
+      if (pendingTable) { N.forEach(n => { cfg[n.id] = pendingTable[n.id]; n.t = cfg[n.id].name || n.t0; dirty.add(n.id); }); pendingTable = null; repaintAll(); store.save(); }
       editing = true; updateAuthBtn(); setStatus(mode === "change" ? "Пароль изменён" : "Режим правки включён", 3000); renderPanel();
     } catch (e) { fail("Ошибка: " + (e.message || e)); }
     finally { go.disabled = false; }
@@ -539,6 +538,7 @@ N.forEach(n => {
 function refreshNode(id) {
   const n = byId[id], b = nodeEls[id], c = cfg[id];
   b.classList.toggle("has-open", c.q.length > 0);
+  if (b.firstChild && b.firstChild.nodeType === 3 && b.firstChild.nodeValue !== n.t) b.firstChild.nodeValue = n.t;
   b.setAttribute("aria-label", n.t + (c.c.length ? ", критериев: " + c.c.length : "") + (RES ? (n.p && !OWN[id] ? ", нет данных" : ", должников: " + RES[id].length) : ""));
   b.querySelectorAll(".cnt,.dc").forEach(x => x.remove());
   if (c.c.length) b.appendChild(el("span", "cnt", String(c.c.length)));
@@ -574,7 +574,7 @@ let NORM = [], STR = [];    // per column caches
 let RES = null, OWN = {};   // node id -> row indices; node id -> active rules
 const OPS = [
   ["filled", "заполнено"], ["empty", "пусто"], ["eq", "="], ["ne", "≠"], ["lt", "<"], ["le", "≤"], ["gt", ">"], ["ge", "≥"],
-  ["contains", "содержит"], ["ncontains", "не содержит"], ["older", "дата старше N лет"], ["newer", "дата не старше N лет"], ["emptynewer", "пусто или дата не старше N лет"]
+  ["contains", "содержит"], ["ncontains", "не содержит"], ["older", "дата старше N лет"], ["newer", "дата не старше N лет"], ["emptynewer", "пусто или дата не старше N лет"], ["in", "одно из списка"], ["nin", "не из списка"]
 ];
 const CMP_OPS = ["eq", "ne", "lt", "le", "gt", "ge"];
 const opLabel = o => (OPS.find(x => x[0] === o) || [0, o])[1];
@@ -624,6 +624,10 @@ function makeTest(r) {
   const S = STR[ci] || new Proxy([], { get: (_, i) => { const v = A[i]; return v == null ? "" : String(v); } });
   if (op === "filled") return i => A[i] !== null;
   if (op === "empty") return i => A[i] === null;
+  if (op === "in" || op === "nin") {
+    const set = new Set(String(r.val || "").split(";").map(x => x.trim().toLowerCase()).filter(Boolean)); if (!set.size) return null;
+    return op === "in" ? i => set.has(String(S[i]).trim()) : i => !set.has(String(S[i]).trim());
+  }
   if (op === "contains" || op === "ncontains") {
     const v = String(r.val || "").toLowerCase(); if (!v) return null;
     return op === "contains" ? i => S[i].includes(v) : i => !S[i].includes(v);
@@ -652,6 +656,7 @@ function describeRule(r) {
   if (!r || !r.col) return "";
   const op = r.op || "filled";
   if (op === "filled" || op === "empty") return r.col + " " + opLabel(op);
+  if (op === "in" || op === "nin") return r.col + " " + opLabel(op) + ": " + (r.val || "…");
   if (op === "older" || op === "newer" || op === "emptynewer") return r.col + ": " + opLabel(op).replace("N", r.val || "N");
   return r.col + " " + opLabel(op) + " " + (r.cmp ? "[" + r.cmp + "]" : (r.val || "…"));
 }
@@ -680,16 +685,41 @@ function recalc() {
   if (!DATA) { RES = null; OWN = {}; return; }
   if (bigMissing() && !bigBusy) { setStatus("Подгружаю колонку из файла…"); bigLoad(DATA.f, DATA.sheet, DATA.ctx); return; }
   RES = {}; OWN = {};
+  const tests = {}, subs = {};
   N.forEach(n => {
-    const tests = cfg[n.id].c.map(c => makeTest(c.r)).filter(Boolean);
-    OWN[n.id] = tests.length;
-    if (!n.p) { RES[n.id] = visibleRows(); return; }
-    const base = RES[n.from || n.p];
-    if (!tests.length) { RES[n.id] = base; return; }
-    const out = [];
-    for (let j = 0; j < base.length; j++) { const i = base[j]; let ok = !!n.union ? false : true; for (let t = 0; t < tests.length; t++) { if (n.union) { if (tests[t](i)) { ok = true; break; } } else if (!tests[t](i)) { ok = false; break; } } if (ok) out.push(i); }
-    RES[n.id] = out;
+    const c = cfg[n.id];
+    tests[n.id] = c.c.map(x => makeTest(x.r)).filter(Boolean);
+    subs[n.id] = (c.sub || []).filter(x => byId[x] && x !== n.id);
+    OWN[n.id] = tests[n.id].length + (subs[n.id].length ? 1 : 0);
   });
+  const busy = new Set();
+  const calc = id => {
+    if (RES[id]) return RES[id];
+    if (busy.has(id)) return [];
+    busy.add(id);
+    const n = byId[id], c = cfg[id], t = tests[id];
+    let out;
+    const baseId = c.from && byId[c.from] && c.from !== id ? c.from : n.p;
+    if (!baseId) out = visibleRows();
+    else {
+      out = calc(baseId);
+      if (t.length) {
+        const or = c.l === "or", base = out; out = [];
+        for (let j = 0; j < base.length; j++) {
+          const i = base[j]; let ok = !or;
+          for (let k = 0; k < t.length; k++) { if (or) { if (t[k](i)) { ok = true; break; } } else if (!t[k](i)) { ok = false; break; } }
+          if (ok) out.push(i);
+        }
+      }
+      if (subs[id].length) {
+        const bad = new Uint8Array(nRows());
+        subs[id].forEach(sid => { if (OWN[sid] > 0) calc(sid).forEach(i => { bad[i] = 1; }); });
+        out = out.filter(i => !bad[i]);
+      }
+    }
+    busy.delete(id); return RES[id] = out;
+  };
+  N.forEach(n => calc(n.id));
   N.forEach(n => refreshNode(n.id));
   updatePanelData();
 }
@@ -928,6 +958,71 @@ async function bigDownloadAll() {
   await saveBlob(new Blob(["﻿" + summary.map(csvLine).join("")], { type: "text/csv;charset=utf-8" }), "Сводка воронки.csv");
 }
 
+/* ---------- rules table (xlsx): block names + criteria ---------- */
+const OPLBL = {"заполнено": "filled", "пусто": "empty", "равно": "eq", "не равно": "ne", "меньше": "lt", "меньше или равно": "le", "больше": "gt", "больше или равно": "ge", "содержит": "contains", "не содержит": "ncontains", "одно из списка": "in", "не из списка": "nin", "дата старше n лет": "older", "дата не старше n лет": "newer", "пусто или дата не старше n лет": "emptynewer"};
+const cellS = v => v instanceof Date ? fmtCell(v) : v == null ? "" : String(v).trim();
+function parseRulesTable(wb) {
+  const sn = wb.SheetNames.find(x => /^правила$/i.test(x.trim())) || wb.SheetNames.find(x => /правил/i.test(x) && !/как/i.test(x));
+  if (!sn) throw new Error("в файле нет листа «Правила»");
+  const arr = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" });
+  const hi = arr.findIndex(r => r.some(v => cellS(v) === "Код блока"));
+  if (hi < 0) throw new Error("не найден столбец «Код блока»");
+  const head = arr[hi].map(v => cellS(v).toLowerCase());
+  const ix = nm => head.findIndex(h => h.startsWith(nm.toLowerCase()));
+  const I = { code: ix("Код блока"), name: ix("Блок"), desc: ix("Критерий"), col: ix("Колонка"), op: ix("Условие"), val: ix("Значение"), cmp: ix("Сравнить"), logic: ix("Логика"), from: ix("Брать из"), sub: ix("Вычесть") };
+  ["code", "col", "op"].forEach(k => { if (I[k] < 0) throw new Error("не найден нужный столбец таблицы"); });
+  const g = (r, k) => I[k] < 0 ? "" : cellS(r[I[k]]);
+  const blocks = {}, warns = [];
+  for (let li = hi + 1; li < arr.length; li++) {
+    const r = arr[li], code = g(r, "code"); if (!code) continue;
+    if (!byId[code]) { warns.push("строка " + (li + 1) + ": нет блока с кодом «" + code + "»"); continue; }
+    const b = blocks[code] = blocks[code] || { rows: [], name: "", logic: "", from: "", sub: "" };
+    ["name", "logic", "from", "sub"].forEach(k => { if (!b[k]) b[k] = g(r, k); });
+    const col = g(r, "col"), opl = g(r, "op").toLowerCase(), val = g(r, "val"), cmp = g(r, "cmp");
+    let desc = g(r, "desc"), rule = null;
+    if (col || opl) {
+      const op = OPLBL[opl];
+      if (!col) warns.push("строка " + (li + 1) + ": указано условие без колонки");
+      else if (!op) warns.push("строка " + (li + 1) + ": неизвестное условие «" + g(r, "op") + "»");
+      else {
+        rule = { col, op, val, cmp };
+        if (!["filled", "empty"].includes(op) && !val && !cmp) warns.push("строка " + (li + 1) + ": у условия нет значения, критерий не применяется");
+        if (!desc) desc = describeRule(rule);
+      }
+    }
+    if (desc || rule) b.rows.push({ t: desc, r: rule });
+  }
+  Object.entries(blocks).forEach(([code, b]) => {
+    if (b.from && !byId[b.from]) { warns.push(code + ": «Брать из блока» — нет блока «" + b.from + "»"); b.from = ""; }
+    b.sub = b.sub ? b.sub.split(/[;,]/).map(x => x.trim()).filter(Boolean).filter(x => { if (byId[x] && x !== code) return true; warns.push(code + ": «Вычесть блоки» — нет блока «" + x + "»"); return false; }) : [];
+  });
+  const missing = N.filter(n => !blocks[n.id]).map(n => n.id);
+  return { blocks, warns, missing };
+}
+async function loadRulesFile(file) {
+  if (typeof XLSX === "undefined") { setStatus("Не загрузилась библиотека чтения Excel", 5000); return; }
+  const info = $("#rulesInfo");
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+    const { blocks, warns, missing } = parseRulesTable(wb);
+    Object.entries(blocks).forEach(([code, b]) => {
+      const n = byId[code], d = cfg[code], nm = b.name && b.name !== n.t0 ? b.name : "";
+      cfg[code] = { c: b.rows, q: d.q, n: d.n, l: /или/i.test(b.logic) ? "or" : "", from: b.from, sub: b.sub, name: nm };
+      n.t = nm || n.t0;
+    });
+    cfg.__v = 2;
+    if (typeof dirty !== "undefined") N.forEach(n => dirty.add(n.id));
+    repaintAll();
+    info.hidden = false; info.replaceChildren();
+    const h = el("span"); h.appendChild(el("b", null, "Таблица правил: ")); h.appendChild(document.createTextNode(file.name + ", блоков загружено " + Object.keys(blocks).length + " из " + N.length + (missing.length ? " (не в таблице, остались прежними: " + missing.join(", ") + ")" : "") + "."));
+    info.appendChild(h); warns.slice(0, 8).forEach(w => info.appendChild(el("span", "w", w))); if (warns.length > 8) info.appendChild(el("span", "w", "и ещё замечаний: " + (warns.length - 8)));
+    const snap = () => Object.fromEntries(N.map(n => [n.id, JSON.parse(JSON.stringify(cfg[n.id]))]));
+    if (typeof REMOTE !== "undefined" && REMOTE && !TOKEN) { pendingTable = snap(); setStatus("Правила применены только у вас. Введите пароль, чтобы сохранить для всех", 8000); showAuth(); }
+    else { setStatus("Правила применены, сохраняю…"); store.save(); }
+  } catch (e) { setStatus("Не удалось прочитать таблицу правил: " + (e.message || e), 7000); }
+}
+$("#rulesFile").addEventListener("change", e => { const f = e.target.files[0]; if (f) loadRulesFile(f); e.target.value = ""; });
+
 /* ---------- file loading ---------- */
 function setInfo(html) { const f = $("#fileinfo"); f.replaceChildren(); html.forEach(x => f.appendChild(typeof x === "string" ? document.createTextNode(x) : x)); }
 function pickSheet(wb, name) {
@@ -1074,7 +1169,7 @@ function updatePanelData() {
   const nd = byId[id].p && !OWN[id];
   num.textContent = nd ? "—" : nf.format(rows);
   const pct = total ? (rows / total * 100) : 0;
-  $("#tileSub").textContent = "из " + nf.format(total) + (onlyRecent ? " должников (без умерших более 5 мес. назад, " : " строк файла (") + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (nd ? ". Для этого блока в файле нет данных. Привяжите критерии к колонкам (режим правки), иначе число не считается." : "");
+  $("#tileSub").textContent = "из " + nf.format(total) + (onlyRecent ? " должников (без умерших более 5 мес. назад, " : " строк файла (") + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (nd ? ". Для этого блока в файле нет данных. Задайте критерии в таблице правил, иначе число не считается." : "");
   $("#dlBlock").disabled = rows === 0 || !!nd;
   const pv = $("#prev"); pv.replaceChildren();
   if (!rows) { pv.appendChild(el("p", "empty", "В блоке нет строк.")); return; }
@@ -1125,7 +1220,13 @@ function renderView(n, c, path) {
       body.appendChild(li);
     });
   } else body = el("p", "empty", kids(n.id).length ? "Собственных критериев нет. Они заданы у вложенных блоков." : "Критерии для этого блока не заданы.");
-  panel.appendChild(section("Критерии блока", body, edit));
+  const meta = [];
+  if (c.from && byId[c.from]) meta.push("Берётся из блока «" + byId[c.from].t + "» (" + c.from + ")");
+  if (c.sub && c.sub.length) meta.push("Минус блоки: " + c.sub.map(x => (byId[x] ? byId[x].t : x) + " (" + x + ")").join("; "));
+  if (c.l === "or" && c.c.length > 1) meta.push("Критерии связаны через ИЛИ");
+  const bw = el("div"); bw.appendChild(body);
+  meta.forEach(t => bw.appendChild(el("p", "hint", t)));
+  panel.appendChild(section("Критерии блока", bw, edit));
   if (c.q.length) { const ul = el("ul", "crit"); c.q.forEach(t => ul.appendChild(el("li", "q", t))); panel.appendChild(section("Открытые вопросы", ul)); }
   if (c.n) panel.appendChild(el("p", "note", c.n));
   const ks = kids(n.id);
@@ -1192,25 +1293,7 @@ function ruleBuilder(crit) {
   draw(); return box;
 }
 function renderEditor(n, c) {
-  const crit = el("div", "ed");
-  const cwrap = el("div");
-  const drawC = () => {
-    cwrap.replaceChildren();
-    c.c.forEach((x, k) => {
-      const item = el("div", "ed"); item.style.marginBottom = "8px";
-      const line = el("div", "line");
-      const ta = el("textarea"); ta.value = x.t; ta.rows = 2; ta.setAttribute("aria-label", "Текст критерия");
-      ta.addEventListener("input", () => { x.t = ta.value; changed(); });
-      line.appendChild(ta);
-      line.appendChild(mini("Удалить", () => { c.c.splice(k, 1); drawC(); recalc(); changed(); }, "danger"));
-      item.appendChild(line); item.appendChild(ruleBuilder(x)); cwrap.appendChild(item);
-    });
-    if (!c.c.length) cwrap.appendChild(el("p", "hint", "Критериев пока нет."));
-  };
-  drawC();
-  crit.appendChild(cwrap);
-  crit.appendChild(mini("+ Добавить критерий", () => { c.c.push({ t: "", r: null }); drawC(); changed(); }));
-  panel.appendChild(section("Критерии блока", crit));
+  panel.appendChild(el("p", "hint", "Критерии блока меняются только через таблицу правил (кнопка «Загрузить таблицу правил» вверху). Здесь можно править открытые вопросы и примечание."));
 
   const qbox = el("div", "ed"), qwrap = el("div");
   const drawQ = () => {
@@ -1236,22 +1319,10 @@ function renderEditor(n, c) {
   const done = el("button", "btn primary", "Готово"); done.type = "button";
   done.addEventListener("click", () => { c.c = c.c.filter(x => x.t.trim()); c.q = c.q.filter(t => t.trim()); editing = false; recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); });
   acts.appendChild(done);
-  acts.appendChild(mini("Вернуть как в документе", () => { cfg[sel] = defCfg(n); recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); }, "danger"));
+  acts.appendChild(mini("Вернуть критерии по умолчанию", () => { cfg[sel] = defCfg(n); recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); }, "danger"));
   panel.appendChild(acts);
   if (REMOTE) acts.appendChild(mini("Сменить пароль", () => showAuth("change")));
-  if (REMOTE) {
-    const le = localEdits(), ids = Object.keys(le).filter(id => JSON.stringify(le[id]) !== JSON.stringify(cfg[id]));
-    if (ids.length) {
-      let armed = false;
-      const mb = mini("Перенести правки этого браузера (" + ids.length + ")", () => {
-        if (!armed) { armed = true; mb.textContent = "Подтвердить: заменить общие данные у блоков: " + ids.length; return; }
-        ids.forEach(id => { cfg[id] = le[id]; dirty.add(id); });
-        recalc(); repaintAll(); saveSoon(); setStatus("Правки перенесены, сохраняю…", 3000); renderPanel();
-      });
-      acts.appendChild(mb);
-    }
-  }
-  panel.appendChild(el("p", "hint", (REMOTE ? "Изменения сохраняются в общий файл и появляются у всех в течение 3 минут. " : "Изменения сохраняются автоматически. ") + "Критерий с правилом сразу меняет выборку и число должников."));
+  panel.appendChild(el("p", "hint", (REMOTE ? "Изменения сохраняются в общий файл и появляются у всех в течение 3 минут. " : "Изменения сохраняются автоматически. ") + "Критерии блоков меняются через таблицу правил. Здесь правятся открытые вопросы и примечания."));
 }
 
 /* ---------- open-questions mode and zoom ---------- */
