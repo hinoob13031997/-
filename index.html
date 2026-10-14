@@ -613,7 +613,9 @@ function makeTest(r) {
   /* пока в выгрузке нет колонки «Дата ИД», наличие ИД определяем по его номеру */
   if (ci < 0 && r.col === "Дата ИД" && (r.op === "filled" || r.op === "empty")) ci = colIdx("№ Исполнительного документа");
   if (ci < 0) return null;
-  const A = NORM[ci], S = STR[ci], op = r.op || "filled";
+  const A = NORM[ci], op = r.op || "filled";
+  if (!A) return null;
+  const S = STR[ci] || new Proxy([], { get: (_, i) => { const v = A[i]; return v == null ? "" : String(v); } });
   if (op === "filled") return i => A[i] !== null;
   if (op === "empty") return i => A[i] === null;
   if (op === "contains" || op === "ncontains") {
@@ -651,10 +653,11 @@ function describeRule(r) {
 let onlyRecent = false;
 try { onlyRecent = localStorage.getItem("funnel-recent") === "1"; } catch (e) {}
 /* строки, которые участвуют в воронке: при включённом тумблере скрыты должники, умершие больше 5 месяцев назад */
+const nRows = () => DATA.big ? DATA.n : DATA.rows.length;
 function visibleRows() {
-  const all = Array.from({ length: DATA.rows.length }, (_, i) => i);
+  const all = Array.from({ length: nRows() }, (_, i) => i);
   if (!onlyRecent) return all;
-  const ci = colIdx("Дата смерти"); if (ci < 0) return all;
+  const ci = colIdx("Дата смерти"); if (ci < 0 || !NORM[ci]) return all;
   const d = new Date(), thr = Date.UTC(d.getFullYear(), d.getMonth() - 5, d.getDate()), A = NORM[ci];
   return all.filter(i => !(typeof A[i] === "number" && A[i] < thr));
 }
@@ -664,11 +667,12 @@ function paintSeg() {
 document.querySelectorAll("#oldSeg button").forEach(b => b.addEventListener("click", () => {
   onlyRecent = b.dataset.v === "recent"; paintSeg();
   try { localStorage.setItem("funnel-recent", onlyRecent ? "1" : "0"); } catch (e) {}
-  if (DATA) { recalc(); if (sel) select(sel); if (onlyRecent && colIdx("Дата смерти") < 0) setStatus("В файле нет колонки «Дата смерти»", 4000); else setStatus(onlyRecent ? "Скрыты должники с датой смерти больше 5 месяцев назад: показано " + nf.format(RES.root.length) + " из " + nf.format(DATA.rows.length) : "Показаны все должники", 4000); }
+  if (DATA) { recalc(); if (sel) select(sel); if (onlyRecent && colIdx("Дата смерти") < 0) setStatus("В файле нет колонки «Дата смерти»", 4000); else setStatus(onlyRecent ? "Скрыты должники с датой смерти больше 5 месяцев назад: показано " + nf.format(RES.root.length) + " из " + nf.format(nRows()) : "Показаны все должники", 4000); }
 }));
 paintSeg();
 function recalc() {
   if (!DATA) { RES = null; OWN = {}; return; }
+  if (bigMissing() && !bigBusy) { setStatus("Подгружаю колонку из файла…"); bigLoad(DATA.f, DATA.sheet, DATA.ctx); return; }
   RES = {}; OWN = {};
   N.forEach(n => {
     const tests = cfg[n.id].c.map(c => makeTest(c.r)).filter(Boolean);
@@ -682,6 +686,240 @@ function recalc() {
   });
   N.forEach(n => refreshNode(n.id));
   updatePanelData();
+}
+
+/* ---------- big files (.xlsx, hundreds of MB): streaming read, only needed columns stay in memory ---------- */
+const BIG_SIZE = 25 * 1024 * 1024;
+const utf8 = new TextDecoder("utf-8");
+const tick = () => new Promise(r => setTimeout(r, 0));
+const xmlDec = s => s.indexOf("&") < 0 ? s : s.replace(/&(#x?[0-9a-fA-F]+|amp|lt|gt|quot|apos);/g, (m, e) => e[0] === "#" ? String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)) : ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" })[e]);
+async function zipEntries(file) {
+  const tl = Math.min(file.size, 70000);
+  const tail = new DataView(await file.slice(file.size - tl).arrayBuffer());
+  let p = tl - 22; while (p >= 0 && tail.getUint32(p, true) !== 0x06054b50) p--;
+  if (p < 0) throw new Error("это не файл .xlsx");
+  const cnt = tail.getUint16(p + 10, true), cdSize = tail.getUint32(p + 12, true), cdOff = tail.getUint32(p + 16, true);
+  if (cdOff === 0xFFFFFFFF || cnt === 0xFFFF) throw new Error("архив слишком большой (zip64), сохраните файл в Excel заново");
+  const cd = new DataView(await file.slice(cdOff, cdOff + cdSize).arrayBuffer());
+  const out = {}; let q = 0;
+  for (let k = 0; k < cnt && q + 46 <= cd.byteLength; k++) {
+    if (cd.getUint32(q, true) !== 0x02014b50) break;
+    const method = cd.getUint16(q + 10, true), csize = cd.getUint32(q + 20, true), usize = cd.getUint32(q + 24, true);
+    const nl = cd.getUint16(q + 28, true), xl = cd.getUint16(q + 30, true), cl = cd.getUint16(q + 32, true), off = cd.getUint32(q + 42, true);
+    out[utf8.decode(new Uint8Array(cd.buffer, cd.byteOffset + q + 46, nl))] = { method, csize, usize, off };
+    q += 46 + nl + xl + cl;
+  }
+  return out;
+}
+async function entryStream(file, ent, prog) {
+  const lh = new DataView(await file.slice(ent.off, ent.off + 30).arrayBuffer());
+  const start = ent.off + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
+  let s = file.slice(start, start + ent.csize).stream();
+  if (prog) { let n = 0; s = s.pipeThrough(new TransformStream({ transform(c, k) { n += c.length; prog(ent.csize ? n / ent.csize : 1); k.enqueue(c); } })); }
+  if (ent.method === 8) s = s.pipeThrough(new DecompressionStream("deflate-raw"));
+  else if (ent.method !== 0) throw new Error("неизвестный способ сжатия в файле");
+  return s.pipeThrough(new TextDecoderStream());
+}
+async function streamText(file, ent, onText, prog) {
+  const rd = (await entryStream(file, ent, prog)).getReader();
+  let t0 = performance.now();
+  for (;;) {
+    const { value, done } = await rd.read(); if (done) break;
+    if (onText(value) === false) { try { await rd.cancel(); } catch (e) {} break; }
+    if (performance.now() - t0 > 80) { await tick(); t0 = performance.now(); }
+  }
+}
+async function readWhole(file, ent) { let s = ""; await streamText(file, ent, t => { s += t; }); return s; }
+const isDateFmt = (id, code) => {
+  if ((id >= 14 && id <= 22) || (id >= 27 && id <= 36) || (id >= 45 && id <= 47) || (id >= 50 && id <= 58)) return true;
+  if (!code) return false;
+  return /[dmyhs]/i.test(code.replace(/"[^"]*"/g, "").replace(/\[[^\]]*\]/g, "").replace(/\\./g, ""));
+};
+async function bigOpen(file, prog) {
+  const entries = await zipEntries(file);
+  const wbEnt = entries["xl/workbook.xml"]; if (!wbEnt) throw new Error("в файле нет книги Excel");
+  const wbx = await readWhole(file, wbEnt);
+  const relEnt = entries["xl/_rels/workbook.xml.rels"];
+  const rels = {}; if (relEnt) { const rx = await readWhole(file, relEnt); for (const m of rx.matchAll(/<Relationship\b([^>]*?)\/?>/g)) { const id = (m[1].match(/\bId="([^"]*)"/) || [])[1], tg = (m[1].match(/\bTarget="([^"]*)"/) || [])[1]; if (id && tg) rels[id] = tg.startsWith("/") ? tg.slice(1) : "xl/" + tg.replace(/^\.\//, ""); } }
+  const sheets = []; let k = 0;
+  for (const m of wbx.matchAll(/<sheet\b([^>]*?)\/?>/g)) {
+    k++; const nm = (m[1].match(/\bname="([^"]*)"/) || [])[1] || "Лист" + k, rid = (m[1].match(/\br:id="([^"]*)"/) || [])[1];
+    const path = rels[rid] || "xl/worksheets/sheet" + k + ".xml"; if (entries[path]) sheets.push({ name: xmlDec(nm), path, size: entries[path].usize });
+  }
+  if (!sheets.length) throw new Error("в файле нет листов");
+  const date1904 = /<workbookPr\b[^>]*date1904="(1|true)"/.test(wbx);
+  const isDate = [];
+  if (entries["xl/styles.xml"]) {
+    const sx = await readWhole(file, entries["xl/styles.xml"]), fm = {};
+    for (const m of sx.matchAll(/<numFmt\b([^>]*?)\/?>/g)) { const id = (m[1].match(/numFmtId="(\d+)"/) || [])[1], c = (m[1].match(/formatCode="([^"]*)"/) || [])[1]; if (id) fm[id] = xmlDec(c || ""); }
+    const blk = (sx.match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/) || [])[1] || "";
+    for (const m of blk.matchAll(/<xf\b([^>]*?)\/?>/g)) { const id = (m[1].match(/numFmtId="(\d+)"/) || [])[1]; isDate.push(id != null && isDateFmt(+id, fm[id])); }
+  }
+  const shared = [];
+  if (entries["xl/sharedStrings.xml"]) {
+    let buf = ""; const re = /<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g;
+    await streamText(file, entries["xl/sharedStrings.xml"], t => {
+      buf += t; re.lastIndex = 0; let last = 0, m;
+      while ((m = re.exec(buf))) {
+        last = re.lastIndex; let s = "";
+        if (m[1]) { const body = m[1].indexOf("<rPh") >= 0 ? m[1].replace(/<rPh\b[\s\S]*?<\/rPh>/g, "") : m[1]; for (const x of body.matchAll(/<t\b[^>]*?(?:\/>|>([\s\S]*?)<\/t>)/g)) if (x[1]) s += x[1]; }
+        shared.push(xmlDec(s));
+      }
+      buf = buf.slice(last);
+    }, prog);
+  }
+  return { entries, sheets, date1904, isDate, shared };
+}
+const colNum = s => { let n = 0; for (let i = 0; i < s.length; i++) n = n * 26 + s.charCodeAt(i) - 64; return n - 1; };
+function serialToDate(v, d1904) {
+  const u = new Date(Math.round((v - (d1904 ? 24107 : 25569)) * 864e5));
+  return new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate(), u.getUTCHours(), u.getUTCMinutes(), u.getUTCSeconds());
+}
+const hasVal = vals => { for (let i = 0; i < vals.length; i++) { const v = vals[i]; if (v != null && (typeof v !== "string" || v.trim() !== "")) return true; } return false; };
+/* читает лист потоком: onHeader(vals) для первой непустой строки, onRow(i, vals) для остальных непустых; false из onRow останавливает чтение */
+async function forEachDataRow(file, ctx, path, onHeader, onRow, prog) {
+  let buf = "", header = false, i = -1;
+  const rowRe = /<row\b[^>]*?(?:\/>|>([\s\S]*?)<\/row>)/g, cellRe = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
+  const { shared, isDate, date1904 } = ctx;
+  await streamText(file, ctx.entries[path], t => {
+    buf += t; rowRe.lastIndex = 0; let last = 0, m;
+    while ((m = rowRe.exec(buf))) {
+      last = rowRe.lastIndex; const body = m[1]; if (!body) continue;
+      const vals = []; cellRe.lastIndex = 0; let c;
+      while ((c = cellRe.exec(body))) {
+        const body2 = c[2]; if (!body2) continue;
+        const at = c[1], ref = at.match(/\br="([A-Z]+)/); if (!ref) continue;
+        const ci = colNum(ref[1]), ty = (at.match(/\bt="(\w+)"/) || [])[1];
+        let v = null;
+        if (ty === "inlineStr") { let s = ""; for (const x of body2.matchAll(/<t\b[^>]*?(?:\/>|>([\s\S]*?)<\/t>)/g)) if (x[1]) s += x[1]; v = xmlDec(s); }
+        else {
+          const vm = body2.match(/<v>([^<]*)<\/v>/); if (!vm) continue; const raw = vm[1];
+          if (ty === "s") v = shared[+raw];
+          else if (ty === "str" || ty === "e") v = xmlDec(raw);
+          else if (ty === "b") v = raw === "1";
+          else { const num = parseFloat(raw); if (isFinite(num)) { const sm = at.match(/\bs="(\d+)"/); v = sm && isDate[+sm[1]] ? serialToDate(num, date1904) : num; } }
+        }
+        if (v !== undefined && v !== null) vals[ci] = v;
+      }
+      if (!hasVal(vals)) continue;
+      if (!header) { header = true; onHeader(vals); continue; }
+      i++; if (onRow(i, vals) === false) return false;
+    }
+    buf = buf.slice(last);
+  }, prog);
+}
+function neededColNames() {
+  const s = new Set(["Дата смерти"]);
+  N.forEach(n => cfg[n.id].c.forEach(c => { const r = c.r; if (r && r.col) { s.add(r.col); if (r.cmp) s.add(r.cmp); if (r.col === "Дата ИД") s.add("№ Исполнительного документа"); } }));
+  return s;
+}
+let bigBusy = false, lastPct = -1, lastPctT = 0;
+const progFn = label => p => { const now = performance.now(); const pc = Math.min(100, Math.floor(p * 100)); if (pc !== lastPct && now - lastPctT > 250) { lastPct = pc; lastPctT = now; setStatus(label + " " + pc + "%"); } };
+async function bigLoad(file, sheetName, ctx0) {
+  if (bigBusy) return; bigBusy = true;
+  try {
+    setStatus("Открываю большой файл…");
+    const ctx = ctx0 || await bigOpen(file, progFn("Читаю словарь строк…"));
+    const sh = ctx.sheets.find(s => s.name === sheetName) || ctx.sheets.reduce((a, b) => b.size > a.size ? b : a);
+    const want = neededColNames();
+    let cols = null, wantIdx = [], arrs = [], n = 0;
+    const memo = new Map();
+    const t0 = performance.now();
+    await forEachDataRow(file, ctx, sh.path, vals => {
+      const used = {};
+      cols = Array.from(vals, (v, i) => { let t = v == null || String(v).trim() === "" ? "Колонка " + (i + 1) : String(v).trim(); if (used[t]) { used[t]++; t = t + " (" + used[t] + ")"; } else used[t] = 1; return t; });
+      cols.forEach((nm, i) => { if (want.has(nm)) { wantIdx.push(i); arrs.push([]); } });
+    }, (i, vals) => {
+      n++;
+      for (let k = 0; k < wantIdx.length; k++) {
+        const v = vals[wantIdx[k]]; let r;
+        if (typeof v === "string") { r = memo.get(v); if (r === undefined) { r = normStr(v); if (memo.size < 400000) memo.set(v, r); } }
+        else r = v == null ? null : normVal(v);
+        arrs[k].push(r);
+      }
+    }, progFn("Читаю файл:"));
+    if (!cols) throw new Error("лист пустой");
+    DATA = { file: file.name, f: file, big: true, ctx, cols, n, sheet: sh.name, sheets: ctx.sheets.map(s => s.name), loaded: new Set(wantIdx), rows: null };
+    NORM = []; STR = []; wantIdx.forEach((c, k) => NORM[c] = arrs[k]);
+    previewCache = {};
+    const ss = $("#sheetSel"); ss.replaceChildren(); DATA.sheets.forEach(s => ss.appendChild(new Option(s, s))); ss.value = sh.name; ss.hidden = DATA.sheets.length < 2;
+    bigBusy = false;
+    recalc();
+    setInfo([el("b", null, file.name), " · лист «" + sh.name + "» · " + nf.format(n) + " строк · " + cols.length + " колонок (большой файл: в памяти " + wantIdx.length + " колонок, нужных для правил, чтение " + ((performance.now() - t0) / 1000).toFixed(0) + " с)"]);
+    $("#allBtn").disabled = false; $("#allMode").disabled = false;
+    setStatus("Файл загружен", 2500);
+    if (sel) select(sel);
+  } catch (e) {
+    bigBusy = false;
+    DATA = null; RES = null; OWN = {}; N.forEach(n => refreshNode(n.id));
+    setInfo(["Не удалось прочитать файл: " + (e.message || e)]); setStatus("", 0); updatePanelData();
+  } finally { bigBusy = false; }
+}
+/* правило сослалось на колонку, которой нет в памяти: перечитываем файл с ней */
+function bigMissing() {
+  if (!DATA || !DATA.big) return false;
+  for (const nm of neededColNames()) { const i = DATA.cols.indexOf(nm); if (i >= 0 && !DATA.loaded.has(i)) return true; }
+  return false;
+}
+let previewCache = {};
+async function bigPreview(id) {
+  const key = id + ":" + RES[id].length + ":" + RES[id][0];
+  if (previewCache[key]) return previewCache[key];
+  const idx = RES[id].slice(0, 10), out = []; let p = 0;
+  if (!idx.length) return out;
+  await forEachDataRow(DATA.f, DATA.ctx, DATA.ctx.sheets.find(s => s.name === DATA.sheet).path, () => {}, (i, vals) => {
+    if (i === idx[p]) { out.push(Array.from({ length: DATA.cols.length }, (_, c) => vals[c] === undefined ? null : vals[c])); p++; if (p >= idx.length) return false; }
+  });
+  return previewCache[key] = out;
+}
+const csvCell = v => { if (v == null) return ""; let s = v instanceof Date ? fmtCell(v) : typeof v === "number" ? String(v).replace(".", ",") : String(v); return /[;"\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+const csvLine = a => a.map(csvCell).join(";") + "\r\n";
+async function saveBlob(blob, filename) {
+  try {
+    if (DL) await DL.save({ filename, data: new Uint8Array(await blob.arrayBuffer()) });
+    else { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 20000); }
+    setStatus("Файл сохранён", 2500);
+  } catch (e) { setStatus(e && e.code === "declined" ? "Скачивание отменено" : "Не удалось сохранить файл" + (e && e.message ? ": " + e.message : ""), 5000); }
+}
+/* pick(i, vals) -> массив строк для записи (может быть пустым); until — номер строки, после которой можно остановиться */
+async function bigCsv(headLine, pick, until, filename) {
+  const parts = ["﻿" + headLine]; let buf = [], count = 0;
+  setStatus("Готовлю файл…");
+  await forEachDataRow(DATA.f, DATA.ctx, DATA.ctx.sheets.find(s => s.name === DATA.sheet).path, () => {}, (i, vals) => {
+    const rows = pick(i, vals);
+    for (const r of rows) { buf.push(csvLine(r)); count++; }
+    if (buf.length > 2000) { parts.push(buf.join("")); buf = []; }
+    if (i >= until) return false;
+  }, progFn("Готовлю файл:"));
+  parts.push(buf.join(""));
+  await saveBlob(new Blob(parts, { type: "text/csv;charset=utf-8" }), filename);
+  return count;
+}
+const fullRow = vals => Array.from({ length: DATA.cols.length }, (_, c) => vals[c] === undefined ? null : vals[c]);
+async function bigDownloadBlock(id) {
+  const idx = RES[id]; if (!idx.length) return; let p = 0;
+  await bigCsv(csvLine(DATA.cols), (i, vals) => { if (idx[p] === i) { p++; return [fullRow(vals)]; } return []; }, idx[idx.length - 1], "Реестр - " + safeName(byId[id].t) + ".csv");
+}
+async function bigDownloadAll() {
+  const deep = $("#allMode").value === "deep";
+  const ruled = N.filter(n => OWN[n.id] > 0), ptr = ruled.map(() => 0);
+  const descRuled = id => { const out = []; (function w(x) { kids(x).forEach(k => { if (OWN[k.id] > 0) out.push(k.id); w(k.id); }); })(id); return out; };
+  const pos = Object.fromEntries(ruled.map((n, k) => [n.id, k]));
+  const D = ruled.map(n => deep ? descRuled(n.id).map(d => pos[d]) : []);
+  const labels = ruled.map(n => [n.t, pathText(n.id)]);
+  const mem = new Array(ruled.length);
+  const until = Math.max(0, ...ruled.map(n => RES[n.id].length ? RES[n.id][RES[n.id].length - 1] : 0));
+  await bigCsv(csvLine(["Блок", "Путь"].concat(DATA.cols)), (i, vals) => {
+    let any = false;
+    for (let k = 0; k < ruled.length; k++) { const a = RES[ruled[k].id]; if (a[ptr[k]] === i) { ptr[k]++; mem[k] = true; any = true; } else mem[k] = false; }
+    if (!any) return [];
+    const out = []; let row = null;
+    for (let k = 0; k < ruled.length; k++) { if (!mem[k] || D[k].some(d => mem[d])) continue; row = row || fullRow(vals); out.push(labels[k].concat(row)); }
+    return out;
+  }, until, "Общий реестр воронки.csv");
+  const summary = [["Блок", "Путь", "Критерии блока", "Должников", "Правил в выборке"]];
+  N.forEach(n => summary.push([n.t, pathText(n.id), critText(n.id), n.p && !OWN[n.id] ? "нет данных" : RES[n.id].length, OWN[n.id] || 0]));
+  await saveBlob(new Blob(["﻿" + summary.map(csvLine).join("")], { type: "text/csv;charset=utf-8" }), "Сводка воронки.csv");
 }
 
 /* ---------- file loading ---------- */
@@ -709,6 +947,8 @@ function useSheet(name) {
   if (sel) select(sel);
 }
 async function loadFile(file) {
+  const isX = /\.xls[xm]$/i.test(file.name);
+  if (isX && file.size > BIG_SIZE) { await bigLoad(file); return; }
   if (typeof XLSX === "undefined") { setStatus("Не загрузилась библиотека чтения Excel", 5000); return; }
   setStatus("Читаю файл…");
   await new Promise(r => setTimeout(r, 30));
@@ -722,12 +962,13 @@ async function loadFile(file) {
     useSheet(wb.SheetNames[0]);
     setStatus("Файл загружен", 2500);
   } catch (e) {
+    if (isX && file.size > 3 * 1024 * 1024) { await bigLoad(file); return; }
     DATA = null; RES = null; OWN = {}; N.forEach(n => refreshNode(n.id));
     setInfo(["Не удалось прочитать файл: " + (e.message || e)]); setStatus("", 0); updatePanelData();
   }
 }
 $("#file").addEventListener("change", e => { const f = e.target.files[0]; if (f) loadFile(f); e.target.value = ""; });
-$("#sheetSel").addEventListener("change", e => { try { useSheet(e.target.value); } catch (err) { setStatus(String(err.message || err), 4000); } });
+$("#sheetSel").addEventListener("change", e => { try { if (DATA && DATA.big) { bigLoad(DATA.f, e.target.value, DATA.ctx); return; } useSheet(e.target.value); } catch (err) { setStatus(String(err.message || err), 4000); } });
 const bar = $("#databar");
 ["dragenter", "dragover"].forEach(t => addEventListener(t, e => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) { e.preventDefault(); bar.classList.add("drag"); } }));
 ["dragleave", "drop"].forEach(t => addEventListener(t, e => { if (t === "drop" || e.target === document.documentElement || !e.relatedTarget) bar.classList.remove("drag"); }));
@@ -755,6 +996,7 @@ function critText(id) { return cfg[id].c.map(c => c.t + (c.r ? " [" + describeRu
 function pathText(id) { return pathTo(id).map(n => n.t).join(" > "); }
 async function downloadBlock(id) {
   if (!RES) return;
+  if (DATA.big) return bigDownloadBlock(id);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, sheetFrom(aoa(RES[id])), "Реестр");
   const info = [["Блок", byId[id].t], ["Путь", pathText(id)], ["Должников", RES[id].length], ["Файл-источник", DATA.file], ["Критерии блока", critText(id)]];
@@ -763,6 +1005,7 @@ async function downloadBlock(id) {
 }
 async function downloadAll() {
   if (!RES) return;
+  if (DATA.big) return bigDownloadAll();
   const deep = $("#allMode").value === "deep";
   const ruled = N.filter(n => OWN[n.id] > 0);
   const summary = [["Блок", "Путь", "Критерии блока", "Должников", "Правил в выборке"]];
@@ -829,11 +1072,20 @@ function updatePanelData() {
   $("#dlBlock").disabled = rows === 0 || !!nd;
   const pv = $("#prev"); pv.replaceChildren();
   if (!rows) { pv.appendChild(el("p", "empty", "В блоке нет строк.")); return; }
-  const tb = el("table"), th = el("tr");
-  DATA.cols.forEach(c => th.appendChild(el("th", null, c))); tb.appendChild(el("thead")).appendChild(th);
-  const body = el("tbody");
-  RES[id].slice(0, 10).forEach(i => { const tr = el("tr"); DATA.rows[i].forEach(v => tr.appendChild(el("td", null, fmtCell(v)))); body.appendChild(tr); });
-  tb.appendChild(body); pv.appendChild(tb);
+  const draw = rowsArr => {
+    pv.replaceChildren();
+    const tb = el("table"), th = el("tr");
+    DATA.cols.forEach(c => th.appendChild(el("th", null, c))); tb.appendChild(el("thead")).appendChild(th);
+    const body = el("tbody");
+    rowsArr.forEach(r => { const tr = el("tr"); r.forEach(v => tr.appendChild(el("td", null, fmtCell(v)))); body.appendChild(tr); });
+    tb.appendChild(body); pv.appendChild(tb);
+  };
+  if (DATA.big) {
+    pv.appendChild(el("p", "empty", "Загружаю первые строки из файла…"));
+    bigPreview(id).then(r => { if (sel === id && $("#prev") === pv) draw(r); }).catch(() => { if ($("#prev") === pv) { pv.replaceChildren(); pv.appendChild(el("p", "empty", "Не удалось показать строки.")); } });
+    return;
+  }
+  draw(RES[id].slice(0, 10).map(i => DATA.rows[i]));
 }
 
 function renderPanel() {
