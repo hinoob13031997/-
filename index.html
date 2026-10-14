@@ -300,19 +300,24 @@ const nf = new Intl.NumberFormat("ru-RU");
 const R = (col, op, val) => ({ col, op, val: val == null ? "" : String(val), cmp: "" });
 const DEFR = {
   dead: { "Есть дата смерти": R("Дата смерти", "filled") },
-  A: { "Долг просужен": R("Дата ИД", "filled"), "Дата СА < Дата смерти": { col: "Дата ИД", op: "lt", val: "", cmp: "Дата смерти" } },
-  B: { "СА отсутствует": R("Дата ИД", "empty") },
+  A: { "Долг просужен": R("Дата Исполнительного документа", "filled"), "Дата СА < Дата смерти": { col: "Дата Исполнительного документа", op: "lt", val: "", cmp: "Дата смерти" } },
+  B: { "СА отсутствует": R("Дата Исполнительного документа", "empty") },
   Bm: { "Срок окончания КД больше 3 лет назад": R("Срок займа, дата", "older", 3) },
   Ba: { "Срок окончания КД меньше 3 лет назад": R("Срок займа, дата", "newer", 3) },
+  A1o: { "Есть определение о замене должника": R("Наличие определения о замене должника.", "eq", "Да") },
   A1c: { "Рабочий статус: Контроль Наследство": R("Рабочий статус", "eq", "Контроль Наследство"), "Рабочий статус: Отправка Наследство ГАС": R("Рабочий статус", "eq", "Отправка Наследство ГАС") },
   A1nb: { "Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»": R("Рабочий статус", "eq", "ЧЖ отказ Правопреемство") },
-  A1s: { "Замена взыскателя установлена": R("Замена взыскателя", "eq", 1), "Срок предъявления ИД не истёк": R("Дата окончания ИП", "emptynewer", 3) },
-  A2s: { "Долг просужен цедентом": R("Дата ИД", "filled"), "Замена взыскателя не установлена": R("Замена взыскателя", "eq", 0), "Срок предъявления ИД не истёк": R("Дата окончания ИП", "emptynewer", 3), "Наличие имущества (по обогащению или залог)": R("Наличие имущества", "eq", 1), "Сумма по ИП более 100 000 руб.": R("Сумма долга по ИП", "gt", 100000) },
-  I: { "Наличие имущества (обогащение или залог)": R("Наличие имущества", "eq", 1), "Сумма по АПП ≥ 100 000 руб.": R("Сумма долга по цессии", "ge", 100000) }
+  A1s: { "Замена взыскателя установлена": R("Наличие определения о замене взыскателя", "eq", "Да"), "Срок предъявления ИД не истёк": R("Дата окончания ИП", "emptynewer", 3) },
+  A2s: { "Долг просужен цедентом": R("Дата Исполнительного документа", "filled"), "Замена взыскателя не установлена": R("Наличие определения о замене взыскателя", "eq", "Нет"), "Срок предъявления ИД не истёк": R("Дата окончания ИП", "emptynewer", 3), "Наличие имущества (по обогащению или залог)": R("Есть имущество по обогащению", "eq", 1), "Сумма по ИП более 100 000 руб.": R("Сумма долга по ИП", "gt", 100000) },
+  I: { "Наличие имущества (обогащение или залог)": R("Есть имущество по обогащению", "eq", 1), "Сумма по АПП ≥ 100 000 руб.": R("Сумма долга по Цессии", "ge", 100000) }
 };
 const defRule = (id, t) => { const r = DEFR[id] && DEFR[id][t]; return r ? Object.assign({}, r) : null; };
 const defCfg = n => ({ c: n.c.map(t => ({ t, r: defRule(n.id, t) })), q: n.q.slice(), n: n.n || "" });
-const mapCrit = (id, x) => { const r = x.r && x.r.col ? x.r : null, o = { t: String(x.t || ""), r: r || (x.off ? null : defRule(id, String(x.t || ""))) }; if (x.off && !r) o.off = true; return o; };
+const LEGACY_DROP = new Set(["Замена взыскателя", "Наличие имущества"]);
+const LEGACY_REN = { "Дата ИД": "Дата Исполнительного документа", "Сумма долга по цессии": "Сумма долга по Цессии" };
+const mapCrit = (id, x) => { let r = x.r && x.r.col ? x.r : null; if (r && LEGACY_DROP.has(r.col)) r = null; else if (r && LEGACY_REN[r.col]) r = Object.assign({}, r, { col: LEGACY_REN[r.col] }); const o0 = x.off && !r;
+  x = { t: x.t, r, off: o0 }; return mapCrit2(id, x); };
+const mapCrit2 = (id, x) => { const r = x.r, o = { t: String(x.t || ""), r: r || (x.off ? null : defRule(id, String(x.t || ""))) }; if (x.off && !r) o.off = true; return o; };
 const cfg = Object.fromEntries(N.map(n => [n.id, defCfg(n)]));
 let editing = false;
 
@@ -605,13 +610,14 @@ function buildCaches() {
     NORM.push(a); STR.push(s);
   }
 }
+const cleanHead = t => { const m = String(t).match(/^[^\[\]]*\[(.*)\]$/); return m && m[1].trim() ? m[1].trim() : t; };
 const colIdx = name => DATA ? DATA.cols.indexOf(name) : -1;
 
 function makeTest(r) {
   if (!DATA || !r || !r.col) return null;
   let ci = colIdx(r.col);
   /* пока в выгрузке нет колонки «Дата ИД», наличие ИД определяем по его номеру */
-  if (ci < 0 && r.col === "Дата ИД" && (r.op === "filled" || r.op === "empty")) ci = colIdx("№ Исполнительного документа");
+  if (ci < 0 && r.col === "Дата Исполнительного документа" && (r.op === "filled" || r.op === "empty")) ci = colIdx("№ Исполнительного документа");
   if (ci < 0) return null;
   const A = NORM[ci], op = r.op || "filled";
   if (!A) return null;
@@ -810,7 +816,7 @@ async function forEachDataRow(file, ctx, path, onHeader, onRow, prog) {
 }
 function neededColNames() {
   const s = new Set(["Дата смерти"]);
-  N.forEach(n => cfg[n.id].c.forEach(c => { const r = c.r; if (r && r.col) { s.add(r.col); if (r.cmp) s.add(r.cmp); if (r.col === "Дата ИД") s.add("№ Исполнительного документа"); } }));
+  N.forEach(n => cfg[n.id].c.forEach(c => { const r = c.r; if (r && r.col) { s.add(r.col); if (r.cmp) s.add(r.cmp); if (r.col === "Дата Исполнительного документа") s.add("№ Исполнительного документа"); } }));
   return s;
 }
 let bigBusy = false, lastPct = -1, lastPctT = 0;
@@ -827,7 +833,7 @@ async function bigLoad(file, sheetName, ctx0) {
     const t0 = performance.now();
     await forEachDataRow(file, ctx, sh.path, vals => {
       const used = {};
-      cols = Array.from(vals, (v, i) => { let t = v == null || String(v).trim() === "" ? "Колонка " + (i + 1) : String(v).trim(); if (used[t]) { used[t]++; t = t + " (" + used[t] + ")"; } else used[t] = 1; return t; });
+      cols = Array.from(vals, (v, i) => { let t = v == null || String(v).trim() === "" ? "Колонка " + (i + 1) : cleanHead(String(v).trim()); if (used[t]) { used[t]++; t = t + " (" + used[t] + ")"; } else used[t] = 1; return t; });
       cols.forEach((nm, i) => { if (want.has(nm)) { wantIdx.push(i); arrs.push([]); } });
     }, (i, vals) => {
       n++;
@@ -931,7 +937,7 @@ function pickSheet(wb, name) {
   if (h < 0) throw new Error("Лист пустой");
   const used = {};
   const cols = arr[h].map((v, i) => {
-    let t = v == null || String(v).trim() === "" ? "Колонка " + (i + 1) : String(v).trim();
+    let t = v == null || String(v).trim() === "" ? "Колонка " + (i + 1) : cleanHead(String(v).trim());
     if (used[t]) { used[t]++; t = t + " (" + used[t] + ")"; } else used[t] = 1;
     return t;
   });
