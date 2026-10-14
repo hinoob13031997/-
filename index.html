@@ -340,7 +340,12 @@ const store = {
   }
 };
 let saveTimer = null;
-const saveSoon = () => { setStatus("Сохраняю…"); clearTimeout(saveTimer); saveTimer = setTimeout(() => store.save(), 600); };
+const saveSoon = () => { setStatus("Сохраняю…"); clearTimeout(saveTimer); saveTimer = setTimeout(() => { saveTimer = null; store.save(); }, 600); };
+/* не терять правку, если вкладку закрыли/свернули раньше, чем сработал таймер */
+const flushSave = () => { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; store.save(); } };
+document.addEventListener("visibilitychange", () => { if (document.hidden) flushSave(); });
+window.addEventListener("pagehide", flushSave);
+window.addEventListener("beforeunload", e => { if (typeof dirty !== "undefined" && dirty.size && REMOTE && TOKEN) { flushSave(); e.preventDefault(); e.returnValue = ""; } });
 function applySaved(obj) {
   if (!obj || typeof obj !== "object") return;
   const v2 = obj.__v >= 2;
