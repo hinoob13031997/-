@@ -223,6 +223,7 @@ body { margin: 0; }
       <option value="deep">Общий реестр: каждая строка в самом глубоком блоке</option>
     </select>
     <button class="btn" id="allBtn" disabled>Скачать общий реестр</button>
+    <button class="btn" id="idsBtn" disabled title="Проверить список ID долгов: в каком блоке воронки каждый из них">Проверить список ID</button>
     <span class="status" id="status" role="status"></span>
     <div class="rulesinfo" id="rulesInfo" hidden></div>
   </div>
@@ -921,7 +922,7 @@ async function bigLoad(file, sheetName, ctx0) {
     bigBusy = false;
     recalc();
     setInfo([el("b", null, file.name), " · лист «" + sh.name + "» · " + nf.format(n) + " строк · " + cols.length + " колонок (большой файл: в памяти " + wantIdx.length + " колонок, нужных для правил, чтение " + ((performance.now() - t0) / 1000).toFixed(0) + " с)"]);
-    $("#allBtn").disabled = false; $("#allMode").disabled = false;
+    $("#allBtn").disabled = false; $("#idsBtn").disabled = false; $("#allMode").disabled = false;
     setStatus("Файл загружен", 2500);
     if (sel) select(sel);
   } catch (e) {
@@ -996,6 +997,108 @@ async function bigDownloadAll() {
   N.forEach(n => summary.push([n.t, pathText(n.id), critText(n.id), n.p && !OWN[n.id] ? "нет данных" : RES[n.id].length, OWN[n.id] || 0]));
   await saveBlob(new Blob(["﻿" + summary.map(csvLine).join("")], { type: "text/csv;charset=utf-8" }), "Сводка воронки.csv");
 }
+
+
+/* ---------- проверка списка ID: в каком блоке каждый долг ---------- */
+function idColumns() {
+  if (!DATA) return [];
+  return DATA.cols.filter(c => /^\s*(id|ид)\b/i.test(c) || /номер договора/i.test(c));
+}
+const normId = v => { if (v == null) return ""; let t = String(v).trim(); if (!t) return ""; if (/^-?\d+\.0+$/.test(t)) t = t.replace(/\.0+$/, ""); return t.toUpperCase(); };
+function parseIdList(text) {
+  const out = [], seen = new Set();
+  String(text).split(/[\s,;]+/).forEach(t => { const k = normId(t); if (k && !seen.has(k)) { seen.add(k); out.push(t.trim()); } });
+  return out;
+}
+function finalBlockPlan() {
+  const ruled = N.filter(n => OWN[n.id] > 0 || n.id === "root");
+  const descRuled = id => { const out = []; (function w(x) { kids(x).forEach(k => { if (OWN[k.id] > 0) out.push(k.id); w(k.id); }); })(id); return out; };
+  const pos = Object.fromEntries(ruled.map((n, k) => [n.id, k]));
+  const D = ruled.map(n => descRuled(n.id).map(d => pos[d]).filter(x => x !== undefined));
+  const lab = ruled.map(n => { const pt = pathTo(n.id); return [n.id, n.t, pathText(n.id), (pt[2] || { t: "" }).t]; });
+  return { ruled, D, lab, ptr: ruled.map(() => 0), mem: new Array(ruled.length) };
+}
+function blockAt(plan, i) {
+  const { ruled, D, lab, ptr, mem } = plan;
+  for (let k = 0; k < ruled.length; k++) { const a = RES[ruled[k].id]; if (a[ptr[k]] === i) { ptr[k]++; mem[k] = true; } else mem[k] = false; }
+  const hit = [];
+  for (let k = 0; k < ruled.length; k++) if (mem[k] && !D[k].some(d => mem[d])) hit.push(k);
+  if (!hit.length) return null;
+  const L = hit.map(k => lab[k]);
+  return [L.map(x => x[0]).join(" + "), L.map(x => x[1]).join(" + "), L[0][2], L.map(x => x[3]).filter(Boolean).join(" + ")];
+}
+const BLOCK_NICE = { root: "Не в воронке: нет даты смерти", dead: "Умершие, не распределены: судебный акт вынесен после смерти" };
+async function runIdCheck(list, box) {
+  if (!DATA || !RES) { setStatus("Сначала загрузите файл с данными", 4000); return; }
+  const cols = idColumns();
+  if (!cols.length) { setStatus("В файле нет колонок с ID", 5000); return; }
+  const ci = cols.map(c => DATA.cols.indexOf(c));
+  const want = new Map(); list.forEach(t => want.set(normId(t), t));
+  const found = new Map();
+  const plan = finalBlockPlan();
+  const amtI = colIdx(AMT_COL), deadI = colIdx("Дата смерти"), innerI = DATA.cols.indexOf("ID договора внутренний");
+  const take = (i, vals) => {
+    let hitKey = null, hitCol = "";
+    for (let k = 0; k < ci.length; k++) { if (ci[k] < 0) continue; const key = normId(vals[ci[k]]); if (key && want.has(key) && !found.has(key)) { hitKey = key; hitCol = cols[k]; break; } }
+    const b = blockAt(plan, i);
+    if (hitKey === null) return;
+    const code = b ? b[0] : "", nice = b ? (BLOCK_NICE[code] || b[1]) : "не проходит текущие фильтры";
+    found.set(hitKey, [want.get(hitKey), "да", code, nice, b ? b[2] : "", b ? b[3] : "", amtI >= 0 && vals[amtI] != null ? vals[amtI] : "", deadI >= 0 && vals[deadI] != null ? vals[deadI] : "", hitCol, innerI >= 0 && vals[innerI] != null ? vals[innerI] : ""]);
+  };
+  setStatus("Ищу ID в файле…");
+  if (DATA.big) await forEachDataRow(DATA.f, DATA.ctx, DATA.ctx.sheets.find(s => s.name === DATA.sheet).path, () => {}, (i, vals) => { take(i, vals); }, progFn("Ищу ID:"));
+  else DATA.rows.forEach((vals, i) => take(i, vals));
+  const out = [["Запрошенный ID", "Найден", "Код блока", "Блок", "Путь по воронке", "Ветка", AMT_COL, "Дата смерти", "Совпало по колонке", "ID договора внутренний"]];
+  list.forEach(t => { const k = normId(t); out.push(found.get(k) || [t, "нет", "", "в файле не найден", "", "", "", "", "", ""]); });
+  await saveBlob(new Blob(["﻿" + out.map(csvLine).join("")], { type: "text/csv;charset=utf-8" }), "Проверка ID по блокам.csv");
+  setStatus("Готово: найдено " + found.size + " из " + list.length, 6000);
+  if (box) {
+    box.replaceChildren();
+    box.appendChild(el("p", "hint", "Найдено " + found.size + " из " + list.length + ". Файл «Проверка ID по блокам.csv» сохранён."));
+    const ul = el("ul", "crit");
+    out.slice(1, 21).forEach(r => ul.appendChild(el("li", null, r[0] + " — " + (r[3] || "—"))));
+    box.appendChild(ul);
+    if (out.length > 21) box.appendChild(el("p", "hint", "Показаны первые 20 строк, остальные — в файле."));
+  }
+}
+function showIdCheck() {
+  editing = false;
+  panel.replaceChildren();
+  panel.appendChild(mini("← Назад", () => renderPanel()));
+  panel.appendChild(el("h2", null, "Проверить список ID"));
+  panel.appendChild(el("p", "hint", "Вставьте ID долгов (по одному в строке, можно через запятую или пробел) или выберите файл со списком. В ответ скачается файл: по каждому ID — блок воронки, путь и ветка."));
+  const ta = el("textarea"); ta.rows = 8; ta.style.width = "100%"; ta.setAttribute("aria-label", "Список ID");
+  ta.placeholder = "1222325\n1222369\n1222382";
+  panel.appendChild(ta);
+  const fi = el("input"); fi.type = "file"; fi.accept = ".txt,.csv,.xlsx,.xls"; fi.style.cssText = "display:block;margin:8px 0";
+  fi.addEventListener("change", async () => {
+    const f = fi.files[0]; if (!f) return;
+    try {
+      if (/\.xls[xm]?$/i.test(f.name)) {
+        if (typeof XLSX === "undefined") { setStatus("Библиотека чтения Excel не загрузилась, используйте txt или csv", 6000); return; }
+        const wb = XLSX.read(await f.arrayBuffer(), { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true });
+        ta.value = aoa.map(r => (r || []).join(" ")).join("\n");
+      } else ta.value = await f.text();
+      setStatus("Список загружен: " + parseIdList(ta.value).length + " ID", 4000);
+    } catch (e) { setStatus("Не удалось прочитать файл: " + (e.message || e), 6000); }
+  });
+  panel.appendChild(fi);
+  const box = el("div");
+  const go = el("button", "btn primary", "Проверить"); go.type = "button";
+  go.addEventListener("click", async () => {
+    const list = parseIdList(ta.value);
+    if (!list.length) { setStatus("Список пуст", 3000); return; }
+    go.disabled = true;
+    try { await runIdCheck(list, box); } catch (e) { setStatus("Ошибка проверки: " + (e.message || e), 7000); }
+    finally { go.disabled = false; }
+  });
+  const acts = el("div", "actions"); acts.appendChild(go); panel.appendChild(acts);
+  panel.appendChild(box);
+  panel.appendChild(el("p", "hint", "Поиск идёт по колонкам: " + (idColumns().join(", ") || "—") + ". Учитываются текущие фильтры на схеме."));
+}
+$("#idsBtn").addEventListener("click", showIdCheck);
 
 /* ---------- rules table (xlsx): block names + criteria ---------- */
 const OPLBL = {"заполнено": "filled", "пусто": "empty", "равно": "eq", "не равно": "ne", "меньше": "lt", "меньше или равно": "le", "больше": "gt", "больше или равно": "ge", "содержит": "contains", "не содержит": "ncontains", "одно из списка": "in", "не из списка": "nin", "дата старше n лет": "older", "дата не старше n лет": "newer", "пусто или дата не старше n лет": "emptynewer"};
@@ -1083,7 +1186,7 @@ function useSheet(name) {
   DATA.sheet = name; DATA.cols = cols; DATA.rows = rows;
   buildCaches(); recalc();
   setInfo([el("b", null, DATA.file), " · лист «" + name + "» · " + nf.format(rows.length) + " строк · " + cols.length + " колонок"]);
-  $("#allBtn").disabled = false; $("#allMode").disabled = false;
+  $("#allBtn").disabled = false; $("#idsBtn").disabled = false; $("#allMode").disabled = false;
   if (sel) select(sel);
 }
 async function loadFile(file) {
