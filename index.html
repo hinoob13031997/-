@@ -661,17 +661,33 @@ function mkPath(d, cls, marker) {
   svg.appendChild(p); return p;
 }
 let retPath = null;
+/* маршрут стрелки: горизонталь идёт сразу под родителем, чтобы не проходить сквозь чужие блоки */
+function edgeD(a, n) {
+  const x1 = a.x, yb = a.y + NH, x2 = n.x, y2 = n.y;
+  if (x1 === x2 && y2 > yb) return `M${x1} ${yb}V${y2 - 1}`;
+  if (y2 >= yb + 34) {
+    const ey = Math.round(Math.min(yb + 22, (yb + y2) / 2));
+    return `M${x1} ${yb}V${ey}H${x2}V${y2 - 1}`;
+  }
+  const side = x2 >= x1 ? 1 : -1;
+  const lane = Math.round(x1 + side * (a.w / 2 + 26));
+  return `M${Math.round(x1 + side * a.w / 2)} ${Math.round(a.y + NH / 2)}H${lane}V${y2 - 26}H${x2}V${y2 - 1}`;
+}
+/* пунктирный возврат «Удовлетворено (взыскатель)» → «Правопреемство на стороне должника» */
+function retD() {
+  const a = byId.A2o, b = byId.A1;
+  if (!a || !b) return null;
+  const sx = Math.round(a.x + a.w / 2), sy = Math.round(a.y + NH / 2);
+  const lane = Math.round(Math.max(sx + 21, b.x + b.w / 2 + 21));
+  return `M${sx} ${sy}H${lane}V${b.y - 15}H${Math.round(b.x + 15)}V${b.y - 1}`;
+}
 function drawEdges() {
   Object.values(edgeEls).forEach(p => p.remove());
   Object.keys(edgeEls).forEach(k => delete edgeEls[k]);
-  N.forEach(n => {
-    if (!n.p || !byId[n.p]) return;
-    const a = byId[n.p], x1 = a.x, y1 = a.y + NH, x2 = n.x, y2 = n.y;
-    const d = y2 - 1 <= y1 ? `M${x1} ${y1}V${y1 + 20}H${x2}V${y2 - 1}` : (x1 === x2 ? `M${x1} ${y1}V${y2 - 1}` : `M${x1} ${y1}V${(y1 + y2) / 2}H${x2}V${y2 - 1}`);
-    edgeEls[n.id] = mkPath(d);
-  });
-  if (!retPath) retPath = mkPath("M554 616H575V246H150V261", "ret", "url(#arOn)");
-  else svg.appendChild(retPath);
+  N.forEach(n => { if (n.p && byId[n.p]) edgeEls[n.id] = mkPath(edgeD(byId[n.p], n)); });
+  const rd = retD();
+  if (rd) { if (!retPath) retPath = mkPath(rd, "ret", "url(#arOn)"); else { retPath.setAttribute("d", rd); svg.appendChild(retPath); } }
+  else if (retPath) { retPath.remove(); retPath = null; }
   svg.setAttribute("viewBox", "0 0 " + W + " " + H);
 }
 placeAll(); syncNodeEls(); drawEdges();
