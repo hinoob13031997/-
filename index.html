@@ -89,6 +89,8 @@ button { font: inherit; color: inherit; }
 .node.t-group { background: var(--group-bg); color: var(--group-fg); font-weight: 600; }
 .node.t-result { background: var(--ok-bg); border-color: var(--ok-line); }
 .node.inpath { border-color: var(--sel); border-width: 2px; }
+.editing .node { cursor: grab }
+.editing .node:active { cursor: grabbing }
 .node.sel { border: 4px solid var(--sel); box-shadow: 0 0 0 3px var(--sel-halo); }
 .node.has-open::after { content: ""; position: absolute; top: -4px; right: -4px; width: 11px; height: 11px; border-radius: 50%; background: var(--warn); border: 2px solid var(--surface); }
 .node .cnt { position: absolute; left: 6px; bottom: -9px; font-family: var(--font-mono); font-size: 10px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 0 5px; line-height: 15px; }
@@ -255,7 +257,7 @@ body { margin: 0; }
 
 <script>
 
-const W = 1120, H = 830, NH = 48;
+let W = 1120, H = 830, scale = 1; const NH = 48, W0 = 1120, H0 = 830;
 /* c: критерии из документа, q: открытые вопросы, n: примечание, d: пояснение к блоку */
 const N = [
  {id:"root", t:"Все должники", x:560, y:0, w:190, k:"root", d:"Вся база. Воронка делит должников по статусу, наличию судебного акта и этапу правопреемства."},
@@ -298,11 +300,11 @@ const N = [
  {id:"Inb", p:"In", t:"Обжалуем", x:990, y:762, w:112, k:"final", q:["Критерии обжалования сформулировать"]}
 ];
 const KIND = {root:"Исходная группа", group:"Сегмент", stage:"Этап", result:"Исход суда", final:"Дальнейшее действие"};
-const byId = Object.fromEntries(N.map(n => { n.k = n.k || "stage"; n.c = n.c || []; n.q = n.q || []; n.t0 = n.t; return [n.id, n]; }));
+const byId = Object.fromEntries(N.map(n => { n.k = n.k || "stage"; n.c = n.c || []; n.q = n.q || []; n.t0 = n.t; n.x0 = n.x; n.y0 = n.y; return [n.id, n]; }));
 const kids = id => N.filter(n => n.p === id);
 const pathTo = id => { const r = []; for (let n = byId[id]; n; n = byId[n.p]) r.unshift(n); return r; };
 const $ = s => document.querySelector(s);
-const stage = $("#stage"), svg = $("#edges"), panel = $("#panel");
+const stage = $("#stage"), svg = $("#edges"), panel = $("#panel"), vp = $("#viewport"), sizer = $("#sizer");
 const NS = "http://www.w3.org/2000/svg";
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 const nf = new Intl.NumberFormat("ru-RU");
@@ -310,9 +312,38 @@ const nf = new Intl.NumberFormat("ru-RU");
 /* ---------- editable config (criteria, questions, notes) ---------- */
 /* Правила по умолчанию = таблица правил (лист «Правила»). Загруженная таблица заменяет их целиком. */
 const DEFTBL = {"root":{"l":"","from":"","sub":[],"rows":[]},"dead":{"l":"","from":"","sub":[],"rows":[{"t":"Есть дата смерти","r":{"col":"Дата смерти","op":"filled","val":"","cmp":""}}]},"A":{"l":"","from":"","sub":[],"rows":[{"t":"Долг просужен","r":{"col":"Дата Исполнительного документа","op":"filled","val":"","cmp":""}},{"t":"Дата СА < Дата смерти","r":{"col":"Дата Исполнительного документа","op":"lt","val":"","cmp":"Дата смерти"}}]},"B":{"l":"","from":"","sub":[],"rows":[{"t":"СА отсутствует","r":{"col":"Дата Исполнительного документа","op":"empty","val":"","cmp":""}},{"t":"СА недействителен (данных нет, провести анализ)","r":null}]},"A1":{"l":"","from":"","sub":[],"rows":[]},"A1s":{"l":"","from":"","sub":["A1c","A1o","A1na","A1nb"],"rows":[{"t":"Замена взыскателя установлена","r":{"col":"Наличие определения о замене взыскателя","op":"eq","val":"Да","cmp":""}},{"t":"Срок предъявления ИД не истёк (дата окончания ИП + 3 года; пусто = не окончено)","r":{"col":"Дата окончания ИП","op":"emptynewer","val":"3","cmp":""}}]},"A1c":{"l":"","from":"A1","sub":[],"rows":[{"t":"Рабочий статус: наследство (контроль, отправка в ГАС, повторно)","r":{"col":"Рабочий статус","op":"in","val":"Отправка Наследство ГАС; Контроль Наследство; Наследство повторно; Наследство","cmp":""}}]},"A1r":{"l":"","from":"","sub":[],"rows":[]},"A1n":{"l":"","from":"A1","sub":[],"rows":[{"t":"Есть определение об отказе в замене","r":{"col":"Наличие определения об отказе в замене","op":"eq","val":"Да","cmp":""}}]},"A1o":{"l":"","from":"A1","sub":[],"rows":[{"t":"Есть определение о замене должника","r":{"col":"Наличие определения о замене должника.","op":"eq","val":"Да","cmp":""}}]},"A1na":{"l":"","from":"","sub":[],"rows":[{"t":"Определение об отказе в ПП + статус «Стоп работа»","r":{"col":"Рабочий статус","op":"eq","val":"Стоп работа","cmp":""}}]},"A1nb":{"l":"","from":"","sub":[],"rows":[{"t":"Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»","r":{"col":"Рабочий статус","op":"eq","val":"ЧЖ отказ Правопреемство","cmp":""}}]},"A2":{"l":"","from":"","sub":[],"rows":[]},"A2s":{"l":"","from":"","sub":["A2c","A2o","A2na","A2nb"],"rows":[{"t":"Долг просужен цедентом","r":{"col":"Дата Исполнительного документа","op":"filled","val":"","cmp":""}},{"t":"Замена взыскателя не установлена","r":{"col":"Наличие определения о замене взыскателя","op":"eq","val":"Нет","cmp":""}},{"t":"Срок предъявления ИД не истёк (дата окончания ИП + 3 года; пусто = не окончено)","r":{"col":"Дата окончания ИП","op":"emptynewer","val":"3","cmp":""}},{"t":"Наличие имущества (по обогащению или залог)","r":{"col":"Есть имущество по обогащению","op":"eq","val":"1","cmp":""}},{"t":"Сумма по ИП более 100 000 руб.","r":{"col":"Сумма долга по ИП","op":"gt","val":"100000","cmp":""}}]},"A2c":{"l":"","from":"A2","sub":[],"rows":[{"t":"Рабочий статус: замена взыскателя (контроль, повторно)","r":{"col":"Рабочий статус","op":"in","val":"Замена взыскателя контроль; Замена взыскателя; Замена взыскателя повторно","cmp":""}}]},"A2r":{"l":"","from":"","sub":[],"rows":[]},"A2n":{"l":"","from":"A2","sub":[],"rows":[{"t":"Есть определение об отказе в замене","r":{"col":"Наличие определения об отказе в замене","op":"eq","val":"Да","cmp":""}}]},"A2o":{"l":"","from":"A2","sub":[],"rows":[{"t":"Есть определение о замене взыскателя","r":{"col":"Наличие определения о замене взыскателя","op":"eq","val":"Да","cmp":""}}]},"A2na":{"l":"","from":"","sub":[],"rows":[{"t":"Критерии архива не заданы","r":null}]},"A2nb":{"l":"","from":"","sub":[],"rows":[{"t":"Критерии обжалования сформулировать","r":null}]},"Bm":{"l":"","from":"","sub":[],"rows":[{"t":"Срок окончания КД больше 3 лет назад","r":{"col":"Срок займа, дата","op":"older","val":"3","cmp":""}}]},"Ba":{"l":"","from":"","sub":[],"rows":[{"t":"Срок окончания КД меньше 3 лет назад","r":{"col":"Срок займа, дата","op":"newer","val":"3","cmp":""}}]},"I":{"l":"","from":"","sub":[],"rows":[{"t":"Наличие КД","r":null},{"t":"Наличие имущества (обогащение или залог)","r":{"col":"Есть имущество по обогащению","op":"eq","val":"1","cmp":""}},{"t":"Сумма по АПП ≥ 100 000 руб.","r":{"col":"Сумма долга по Цессии","op":"ge","val":"100000","cmp":""}}]},"Is":{"l":"","from":"","sub":["Ic","Io","Ina","Inb","Iw"],"rows":[]},"Ic":{"l":"","from":"I","sub":[],"rows":[{"t":"Рабочий статус: иск наследство (контроль, повторно)","r":{"col":"Рабочий статус","op":"in","val":"Иск наследство контроль; Иск наследство повторно; Иск наследство","cmp":""}}]},"Ir":{"l":"","from":"","sub":[],"rows":[]},"Iw":{"l":"","from":"","sub":[],"rows":[{"t":"Стоимость имущества","r":null}]},"In":{"l":"","from":"","sub":[],"rows":[]},"Io":{"l":"","from":"","sub":[],"rows":[]},"Ina":{"l":"","from":"","sub":[],"rows":[]},"Inb":{"l":"","from":"","sub":[],"rows":[{"t":"Критерии обжалования сформулировать","r":null}]}};
+const KINDMAP = t => { const x = String(t || "").toLowerCase().trim(); if (!x) return ""; if (/исходн/.test(x)) return "root"; if (/сегмент/.test(x)) return "group"; if (/этап/.test(x)) return "stage"; if (/исход|результат/.test(x)) return "result"; if (/действ/.test(x)) return "final"; return ""; };
+function addNode(d) {
+  const n = { id: String(d.id), p: d.p || "", t: String(d.t || d.id), k: d.k || "stage", c: [], q: [], w: Number(d.w) || 190, x: Number(d.x) || 0, y: Number(d.y) || 0, custom: true };
+  n.t0 = n.t; N.push(n); byId[n.id] = n; return n;
+}
+function autoPos(n) {
+  const p = byId[n.p];
+  if (!p) return { x: Math.round(W0 / 2), y: 0 };
+  let x = p.x, y = p.y + 82;
+  const busy = (x, y, w) => N.some(o => o !== n && Math.abs(o.y - y) < 56 && Math.abs(o.x - x) < (o.w + w) / 2 + 18);
+  for (let row = 0; row < 10; row++) {
+    for (let k = 0; k < 5; k++) {
+      const dx = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (n.w + 30);
+      if (!busy(x + dx, y, n.w)) return { x: Math.max(n.w / 2 + 10, x + dx), y };
+    }
+    y += 82;
+  }
+  return { x, y };
+}
+function placeAll() {
+  N.forEach(n => {
+    const c = cfg[n.id];
+    if (c && c.pos && typeof c.pos.x === "number") { n.x = c.pos.x; n.y = c.pos.y; }
+    else if (n.custom) { const a = autoPos(n); n.x = a.x; n.y = a.y; }
+    else if (n.x0 !== undefined) { n.x = n.x0; n.y = n.y0; }
+  });
+  W = Math.max(W0, ...N.map(n => n.x + n.w / 2 + 40));
+  H = Math.max(H0, ...N.map(n => n.y + NH + 40));
+}
 const defCfg = n => {
   const d = DEFTBL[n.id] || { rows: n.c.map(t => ({ t, r: null })) };
-  return { c: d.rows.map(x => ({ t: x.t, r: x.r ? Object.assign({}, x.r) : null })), q: n.q.slice(), n: n.n || "", l: d.l || "", from: d.from || "", sub: (d.sub || []).slice(), name: "" };
+  return { c: d.rows.map(x => ({ t: x.t, r: x.r ? Object.assign({}, x.r) : null })), q: n.q.slice(), n: n.n || "", l: d.l || "", from: d.from || "", sub: (d.sub || []).slice(), name: "", pos: null };
 };
 const cfg = Object.fromEntries(N.map(n => [n.id, defCfg(n)]));
 cfg.__v = 2;
@@ -347,9 +378,22 @@ const flushSave = () => { if (saveTimer) { clearTimeout(saveTimer); saveTimer = 
 document.addEventListener("visibilitychange", () => { if (document.hidden) flushSave(); });
 window.addEventListener("pagehide", flushSave);
 window.addEventListener("beforeunload", e => { if (typeof dirty !== "undefined" && dirty.size && REMOTE && TOKEN) { flushSave(); e.preventDefault(); e.returnValue = ""; } });
+function syncNodes(list) {
+  const want = Array.isArray(list) ? list.filter(d => d && d.id && !byId[d.id] || (d && d.id)) : [];
+  const ids = new Set(want.map(d => String(d.id)));
+  for (let i = N.length - 1; i >= 0; i--) if (N[i].custom && !ids.has(N[i].id)) { delete byId[N[i].id]; delete cfg[N[i].id]; N.splice(i, 1); }
+  want.forEach(d => {
+    const id = String(d.id);
+    if (byId[id]) { const n = byId[id]; if (n.custom) { n.t = String(d.t || n.t); n.t0 = n.t; n.k = d.k || n.k; n.w = Number(d.w) || n.w; n.p = d.p || ""; } return; }
+    const n = addNode(d); cfg[n.id] = defCfg(n);
+  });
+  N.forEach(n => { if (n.custom && n.p && !byId[n.p]) n.p = ""; });
+  cfg.__nodes = N.filter(n => n.custom).map(n => ({ id: n.id, p: n.p, t: n.t, k: n.k, w: n.w }));
+}
 function applySaved(obj) {
   if (!obj || typeof obj !== "object") return;
   const v2 = obj.__v >= 2;
+  syncNodes(obj.__nodes);
   N.forEach(n => {
     const s = obj[n.id]; if (!s) return;
     const d = cfg[n.id];
@@ -358,11 +402,13 @@ function applySaved(obj) {
       cfg[n.id] = {
         c: Array.isArray(s.c) ? s.c.map(x => ({ t: String(x.t || ""), r: x.r && x.r.col ? x.r : null })) : d.c, q, n: nt,
         l: s.l === "or" ? "or" : "", from: typeof s.from === "string" ? s.from : "", sub: Array.isArray(s.sub) ? s.sub.map(String) : [], name: typeof s.name === "string" ? s.name : "",
+        pos: s.pos && typeof s.pos.x === "number" && typeof s.pos.y === "number" ? { x: s.pos.x, y: s.pos.y } : null,
         txt: Array.isArray(s.txt) ? s.txt.map(String) : null, uname: typeof s.uname === "string" ? s.uname : ""
       };
-    } else cfg[n.id] = Object.assign({}, d, { q, n: nt }); /* старый формат: критерии берутся из таблицы правил по умолчанию */
+    } else cfg[n.id] = Object.assign({}, d, { q, n: nt, pos: s.pos && typeof s.pos.x === "number" ? { x: s.pos.x, y: s.pos.y } : null });
     n.t = cfg[n.id].uname || cfg[n.id].name || n.t0;
   });
+  relayout();
 }
 
 /* ---------- shared storage in the GitHub repo (password-protected editing) ---------- */
@@ -539,12 +585,54 @@ async function initRemote() {
 
 /* ---------- nodes and edges ---------- */
 const nodeEls = {};
-N.forEach(n => {
+function mkNode(n) {
   const b = el("button", "node t-" + n.k, n.t);
-  b.type = "button";
-  b.style.left = (n.x - n.w / 2) + "px"; b.style.top = n.y + "px"; b.style.width = n.w + "px";
-  b.addEventListener("click", () => select(n.id));
-  stage.appendChild(b); nodeEls[n.id] = b;
+  b.type = "button"; b.dataset.id = n.id;
+  b.addEventListener("click", () => { if (b.dataset.drag === "1") { b.dataset.drag = ""; return; } select(n.id); });
+  b.addEventListener("pointerdown", e => startDrag(e, n, b));
+  stage.appendChild(b); nodeEls[n.id] = b; return b;
+}
+function syncNodeEls() {
+  Object.keys(nodeEls).forEach(id => { if (!byId[id]) { nodeEls[id].remove(); delete nodeEls[id]; } });
+  N.forEach(n => { const b = nodeEls[n.id] || mkNode(n); b.className = "node t-" + n.k + (b.classList.contains("sel") ? " sel" : "") + (b.classList.contains("inpath") ? " inpath" : "") + (b.classList.contains("has-open") ? " has-open" : ""); });
+  placeNodeEls();
+}
+function placeNodeEls() {
+  N.forEach(n => { const b = nodeEls[n.id]; if (!b) return; b.style.left = (n.x - n.w / 2) + "px"; b.style.top = n.y + "px"; b.style.width = n.w + "px"; });
+}
+function relayout() {
+  placeAll(); syncNodeEls(); drawEdges();
+  stage.style.width = W + "px"; stage.style.height = H + "px";
+  const sx = vp ? vp.scrollLeft : 0, sy = vp ? vp.scrollTop : 0;
+  if (manual) apply(scale); else fit();
+  if (vp) { vp.scrollLeft = sx; vp.scrollTop = sy; }
+  N.forEach(n => { if (cfg[n.id]) refreshNode(n.id); });
+  refreshStats();
+}
+let drag = null;
+function startDrag(e, n, b) {
+  if (!editing || e.button !== 0) return;
+  e.preventDefault();
+  const r = stage.getBoundingClientRect(), k = scale || 1;
+  drag = { n, b, dx: (e.clientX - r.left) / k - n.x, dy: (e.clientY - r.top) / k - n.y, moved: false };
+  b.setPointerCapture(e.pointerId);
+}
+addEventListener("pointermove", e => {
+  if (!drag) return;
+  const r = stage.getBoundingClientRect(), k = scale || 1;
+  const x = Math.round(((e.clientX - r.left) / k - drag.dx) / 10) * 10, y = Math.round(((e.clientY - r.top) / k - drag.dy) / 10) * 10;
+  if (Math.abs(x - drag.n.x) + Math.abs(y - drag.n.y) > 4) drag.moved = true;
+  drag.n.x = Math.max(drag.n.w / 2 + 10, x); drag.n.y = Math.max(0, y);
+  placeNodeEls(); drawEdges();
+});
+addEventListener("pointerup", () => {
+  if (!drag) return;
+  const d = drag; drag = null;
+  if (!d.moved) return;
+  d.b.dataset.drag = "1";
+  cfg[d.n.id].pos = { x: d.n.x, y: d.n.y };
+  if (typeof dirty !== "undefined") dirty.add(d.n.id);
+  relayout(); saveSoon();
 });
 function refreshNode(id) {
   const n = byId[id], b = nodeEls[id], c = cfg[id];
@@ -572,12 +660,21 @@ function mkPath(d, cls, marker) {
   p.setAttribute("marker-end", marker || "url(#ar)");
   svg.appendChild(p); return p;
 }
-N.forEach(n => {
-  if (!n.p) return;
-  const a = byId[n.p], x1 = a.x, y1 = a.y + NH, x2 = n.x, y2 = n.y;
-  edgeEls[n.id] = mkPath(x1 === x2 ? `M${x1} ${y1}V${y2 - 1}` : `M${x1} ${y1}V${(y1 + y2) / 2}H${x2}V${y2 - 1}`);
-});
-mkPath("M554 616H575V246H150V261", "ret", "url(#arOn)");
+let retPath = null;
+function drawEdges() {
+  Object.values(edgeEls).forEach(p => p.remove());
+  Object.keys(edgeEls).forEach(k => delete edgeEls[k]);
+  N.forEach(n => {
+    if (!n.p || !byId[n.p]) return;
+    const a = byId[n.p], x1 = a.x, y1 = a.y + NH, x2 = n.x, y2 = n.y;
+    const d = y2 - 1 <= y1 ? `M${x1} ${y1}V${y1 + 20}H${x2}V${y2 - 1}` : (x1 === x2 ? `M${x1} ${y1}V${y2 - 1}` : `M${x1} ${y1}V${(y1 + y2) / 2}H${x2}V${y2 - 1}`);
+    edgeEls[n.id] = mkPath(d);
+  });
+  if (!retPath) retPath = mkPath("M554 616H575V246H150V261", "ret", "url(#arOn)");
+  else svg.appendChild(retPath);
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+}
+placeAll(); syncNodeEls(); drawEdges();
 
 /* ---------- data: parse, normalise, rules ---------- */
 let DATA = null;            // {file, sheet, cols:[], rows:[[]], sheets:[], wb}
@@ -1111,15 +1208,15 @@ function parseRulesTable(wb) {
   if (hi < 0) throw new Error("не найден столбец «Код блока»");
   const head = arr[hi].map(v => cellS(v).toLowerCase());
   const ix = nm => head.findIndex(h => h.startsWith(nm.toLowerCase()));
-  const I = { code: ix("Код блока"), name: ix("Блок"), desc: ix("Критерий"), col: ix("Колонка"), op: ix("Условие"), val: ix("Значение"), cmp: ix("Сравнить"), logic: ix("Логика"), from: ix("Брать из"), sub: ix("Вычесть") };
+  const I = { code: ix("Код блока"), name: ix("Блок"), desc: ix("Критерий"), col: ix("Колонка"), op: ix("Условие"), val: ix("Значение"), cmp: ix("Сравнить"), logic: ix("Логика"), from: ix("Брать из"), sub: ix("Вычесть"), parent: ix("Родител"), kind: ix("Тип") };
   ["code", "col", "op"].forEach(k => { if (I[k] < 0) throw new Error("не найден нужный столбец таблицы"); });
   const g = (r, k) => I[k] < 0 ? "" : cellS(r[I[k]]);
   const blocks = {}, warns = [];
   for (let li = hi + 1; li < arr.length; li++) {
     const r = arr[li], code = g(r, "code"); if (!code) continue;
-    if (!byId[code]) { warns.push("строка " + (li + 1) + ": нет блока с кодом «" + code + "»"); continue; }
-    const b = blocks[code] = blocks[code] || { rows: [], name: "", logic: "", from: "", sub: "" };
-    ["name", "logic", "from", "sub"].forEach(k => { if (!b[k]) b[k] = g(r, k); });
+    const b = blocks[code] = blocks[code] || { rows: [], name: "", logic: "", from: "", sub: "", parent: "", kind: "" };
+    ["name", "logic", "from", "sub", "parent", "kind"].forEach(k => { if (!b[k]) b[k] = g(r, k); });
+    if (!byId[code] && !b.parent) { warns.push("строка " + (li + 1) + ": новый блок «" + code + "» без столбца «Родитель (код)» — пропущен"); delete blocks[code]; continue; }
     const col = g(r, "col"), opl = g(r, "op").toLowerCase(), val = g(r, "val"), cmp = g(r, "cmp");
     let desc = g(r, "desc"), rule = null;
     if (col || opl) {
@@ -1134,29 +1231,42 @@ function parseRulesTable(wb) {
     }
     if (desc || rule) b.rows.push({ t: desc, r: rule });
   }
+  const made = [];
   Object.entries(blocks).forEach(([code, b]) => {
+    if (byId[code]) {
+      if (b.parent && !byId[code].custom && b.parent !== byId[code].p) warns.push(code + ": родителя встроенного блока менять нельзя, оставлен прежний");
+      return;
+    }
+    if (!byId[b.parent]) { warns.push(code + ": нет блока-родителя «" + b.parent + "», блок не создан"); delete blocks[code]; return; }
+    const n = addNode({ id: code, p: b.parent, t: b.name || code, k: KINDMAP(b.kind) || "stage", w: Math.min(260, Math.max(170, 11 * String(b.name || code).length / 2 + 40)) });
+    cfg[code] = defCfg(n); made.push(code);
+  });
+  if (made.length) cfg.__nodes = N.filter(n => n.custom).map(n => ({ id: n.id, p: n.p, t: n.t, k: n.k, w: n.w }));
+  Object.entries(blocks).forEach(([code, b]) => {
+    if (byId[code] && byId[code].custom && b.parent && byId[b.parent] && b.parent !== code) { byId[code].p = b.parent; cfg.__nodes = N.filter(n => n.custom).map(n => ({ id: n.id, p: n.p, t: n.t, k: n.k, w: n.w })); }
+    if (byId[code] && byId[code].custom && KINDMAP(b.kind)) byId[code].k = KINDMAP(b.kind);
     if (b.from && !byId[b.from]) { warns.push(code + ": «Брать из блока» — нет блока «" + b.from + "»"); b.from = ""; }
     b.sub = b.sub ? b.sub.split(/[;,]/).map(x => x.trim()).filter(Boolean).filter(x => { if (byId[x] && x !== code) return true; warns.push(code + ": «Вычесть блоки» — нет блока «" + x + "»"); return false; }) : [];
   });
   const missing = N.filter(n => !blocks[n.id]).map(n => n.id);
-  return { blocks, warns, missing };
+  return { blocks, warns, missing, made };
 }
 async function loadRulesFile(file) {
   if (typeof XLSX === "undefined") { setStatus("Не загрузилась библиотека чтения Excel", 5000); return; }
   const info = $("#rulesInfo");
   try {
     const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
-    const { blocks, warns, missing } = parseRulesTable(wb);
+    const { blocks, warns, missing, made } = parseRulesTable(wb);
     Object.entries(blocks).forEach(([code, b]) => {
       const n = byId[code], d = cfg[code], nm = b.name && b.name !== n.t0 ? b.name : "";
-      cfg[code] = { c: b.rows, q: d.q, n: d.n, l: /или/i.test(b.logic) ? "or" : "", from: b.from, sub: b.sub, name: nm, txt: d.txt || null, uname: d.uname || "" };
+      cfg[code] = { c: b.rows, q: d.q, n: d.n, l: /или/i.test(b.logic) ? "or" : "", from: b.from, sub: b.sub, name: nm, txt: d.txt || null, uname: d.uname || "", pos: d.pos || null };
       n.t = cfg[code].uname || nm || n.t0;
     });
     cfg.__v = 2;
     if (typeof dirty !== "undefined") N.forEach(n => dirty.add(n.id));
-    repaintAll();
+    relayout(); repaintAll();
     info.hidden = false; info.replaceChildren();
-    const h = el("span"); h.appendChild(el("b", null, "Таблица правил: ")); h.appendChild(document.createTextNode(file.name + ", блоков загружено " + Object.keys(blocks).length + " из " + N.length + (missing.length ? " (не в таблице, остались прежними: " + missing.join(", ") + ")" : "") + "."));
+    const h = el("span"); h.appendChild(el("b", null, "Таблица правил: ")); h.appendChild(document.createTextNode(file.name + ", блоков загружено " + Object.keys(blocks).length + " из " + N.length + (made && made.length ? ", создано новых: " + made.join(", ") : "") + (missing.length ? " (не в таблице, остались прежними: " + missing.join(", ") + ")" : "") + "."));
     info.appendChild(h); warns.slice(0, 8).forEach(w => info.appendChild(el("span", "w", w))); if (warns.length > 8) info.appendChild(el("span", "w", "и ещё замечаний: " + (warns.length - 8)));
     const snap = () => Object.fromEntries(N.map(n => [n.id, JSON.parse(JSON.stringify(cfg[n.id]))]));
     if (typeof REMOTE !== "undefined" && REMOTE && !TOKEN) { pendingTable = snap(); setStatus("Правила применены только у вас. Введите пароль, чтобы сохранить для всех", 8000); showAuth(); }
@@ -1333,6 +1443,8 @@ function updatePanelData() {
 
 function renderPanel() {
   panel.onkeydown = null;
+  stage.classList.toggle("editing", !!editing);
+  if (!byId[sel]) sel = "dead";
   const n = byId[sel], c = cfg[sel], path = pathTo(sel);
   panel.replaceChildren();
   const crumbs = el("nav", "crumbs"); crumbs.setAttribute("aria-label", "Путь по воронке");
@@ -1495,10 +1607,12 @@ function renderEditor(n, c) {
   const done = el("button", "btn primary", "Готово"); done.type = "button";
   done.addEventListener("click", () => { if (c.txt) c.txt = c.txt.filter(t => t.trim()); c.q = c.q.filter(t => t.trim()); editing = false; recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); });
   acts.appendChild(done);
+  acts.appendChild(mini("Вернуть блок на место", () => { c.pos = null; if (typeof dirty !== "undefined") dirty.add(sel); relayout(); store.save(); }));
+  acts.appendChild(mini("Вернуть все блоки на места", () => { N.forEach(x => { if (cfg[x.id]) cfg[x.id].pos = null; if (typeof dirty !== "undefined") dirty.add(x.id); }); relayout(); store.save(); }));
   acts.appendChild(mini("Вернуть критерии по умолчанию", () => { cfg[sel] = defCfg(n); recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); }, "danger"));
   panel.appendChild(acts);
   if (REMOTE) acts.appendChild(mini("Сменить пароль", () => showAuth("change")));
-  panel.appendChild(el("p", "hint", (REMOTE ? "Изменения сохраняются в общий файл и появляются у всех в течение 3 минут. " : "Изменения сохраняются автоматически. ") + "Правила расчёта меняются через таблицу правил; ваши формулировки при её загрузке не затираются."));
+  panel.appendChild(el("p", "hint", (REMOTE ? "Изменения сохраняются в общий файл и появляются у всех в течение 3 минут. " : "Изменения сохраняются автоматически. ") + "Правила расчёта меняются через таблицу правил; ваши формулировки при её загрузке не затираются. В режиме правки блок можно перетащить мышью — положение сохранится для всех."));
 }
 
 /* ---------- open-questions mode and zoom ---------- */
@@ -1508,8 +1622,8 @@ $("#openBtn").addEventListener("click", e => {
   stage.classList.toggle("openmode", on);
   e.currentTarget.textContent = on ? "Показать всё" : "Открытые вопросы";
 });
-const vp = $("#viewport"), sizer = $("#sizer");
-let scale = 1, manual = false;
+
+let manual = false;
 function apply(s) {
   scale = Math.min(1.6, Math.max(0.4, s));
   stage.style.transform = "scale(" + scale + ")";
