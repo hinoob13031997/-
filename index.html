@@ -226,6 +226,7 @@ body { margin: 0; }
     </select>
     <button class="btn" id="allBtn" disabled>Скачать общий реестр</button>
     <button class="btn" id="idsBtn" disabled title="Проверить список ID долгов: в каком блоке воронки каждый из них">Проверить список ID</button>
+    <button class="btn" id="resetPos" hidden title="Вернуть все блоки на места, заданные схемой">Вернуть блоки на места</button>
     <span class="status" id="status" role="status"></span>
     <div class="rulesinfo" id="rulesInfo" hidden></div>
   </div>
@@ -602,6 +603,9 @@ function placeNodeEls() {
 }
 function relayout() {
   placeAll(); syncNodeEls(); drawEdges();
+  const moved = N.filter(n => cfg[n.id] && cfg[n.id].pos).length;
+  const rp = $("#resetPos");
+  if (rp) { rp.hidden = !moved; rp.textContent = "Вернуть блоки на места (" + moved + ")"; }
   stage.style.width = W + "px"; stage.style.height = H + "px";
   const sx = vp ? vp.scrollLeft : 0, sy = vp ? vp.scrollTop : 0;
   if (manual) apply(scale); else fit();
@@ -666,7 +670,7 @@ function edgeD(a, n) {
   const x1 = a.x, yb = a.y + NH, x2 = n.x, y2 = n.y;
   if (x1 === x2 && y2 > yb) return `M${x1} ${yb}V${y2 - 1}`;
   if (y2 >= yb + 34) {
-    const ey = Math.round(Math.min(yb + 22, (yb + y2) / 2));
+    const ey = Math.round(Math.min(yb + 34, (yb + y2) / 2));
     return `M${x1} ${yb}V${ey}H${x2}V${y2 - 1}`;
   }
   const side = x2 >= x1 ? 1 : -1;
@@ -1212,6 +1216,11 @@ function showIdCheck() {
   panel.appendChild(el("p", "hint", "Поиск идёт по колонкам: " + (idColumns().join(", ") || "—") + ". Учитываются текущие фильтры на схеме."));
 }
 $("#idsBtn").addEventListener("click", showIdCheck);
+$("#resetPos").addEventListener("click", () => {
+  if (REMOTE && !TOKEN) { setStatus("Войдите для правки, чтобы вернуть блоки на места для всех", 5000); showAuth(); return; }
+  N.forEach(n => { if (cfg[n.id] && cfg[n.id].pos) { cfg[n.id].pos = null; if (typeof dirty !== "undefined") dirty.add(n.id); } });
+  relayout(); store.save(); setStatus("Блоки вернулись на места схемы", 3000);
+});
 
 /* ---------- rules table (xlsx): block names + criteria ---------- */
 const OPLBL = {"заполнено": "filled", "пусто": "empty", "равно": "eq", "не равно": "ne", "меньше": "lt", "меньше или равно": "le", "больше": "gt", "больше или равно": "ge", "содержит": "contains", "не содержит": "ncontains", "одно из списка": "in", "не из списка": "nin", "дата старше n лет": "older", "дата не старше n лет": "newer", "пусто или дата не старше n лет": "emptynewer"};
