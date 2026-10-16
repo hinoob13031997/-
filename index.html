@@ -772,6 +772,8 @@ function drawEdges() {
   const rd = retD();
   if (rd) { if (!retPath) retPath = mkPath(rd, "ret", "url(#arOn)"); else { retPath.setAttribute("d", rd); svg.appendChild(retPath); } }
   else if (retPath) { retPath.remove(); retPath = null; }
+  /* svg должен совпадать со сценой по размеру: иначе viewBox сжимает линии, а блоки остаются на месте */
+  svg.setAttribute("width", W); svg.setAttribute("height", H);
   svg.setAttribute("viewBox", "0 0 " + W + " " + H);
 }
 placeAll(); syncNodeEls(); drawEdges();
