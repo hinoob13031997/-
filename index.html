@@ -91,6 +91,7 @@ button { font: inherit; color: inherit; }
 .node.inpath { border-color: var(--sel); border-width: 2px; }
 .editing .node { cursor: grab }
 .editing .node:active { cursor: grabbing }
+.dragging .node { cursor: grabbing }
 .node.sel { border: 4px solid var(--sel); box-shadow: 0 0 0 3px var(--sel-halo); }
 .node.has-open::after { content: ""; position: absolute; top: -4px; right: -4px; width: 11px; height: 11px; border-radius: 50%; background: var(--warn); border: 2px solid var(--surface); }
 .node .cnt { position: absolute; left: 6px; bottom: -9px; font-family: var(--font-mono); font-size: 10px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 8px; padding: 0 5px; line-height: 15px; }
@@ -481,7 +482,7 @@ async function saveRemote() {
     }
   } finally {
     saving = false;
-    if (pending) { pending = false; saveRemote(); }
+    if (pending) { pending = false; if (dirty.size) saveRemote(); }   /* без повторной записи того же самого */
   }
 }
 function repaintAll() {
@@ -614,29 +615,38 @@ function relayout() {
   refreshStats();
 }
 let drag = null;
+/* Блок начинает двигаться только после осознанного перетаскивания: дрожание руки при обычном
+   клике (меньше DRAG_MIN пикселей) блок не сдвигает и ничего не сохраняет. */
 function startDrag(e, n, b) {
   if (!editing || e.button !== 0) return;
-  e.preventDefault();
-  const r = stage.getBoundingClientRect(), k = scale || 1;
-  drag = { n, b, dx: (e.clientX - r.left) / k - n.x, dy: (e.clientY - r.top) / k - n.y, moved: false };
-  b.setPointerCapture(e.pointerId);
+  drag = { n, b, id: e.pointerId, sx: e.clientX, sy: e.clientY, x0: n.x, y0: n.y, on: false,
+           lim: e.pointerType === "touch" ? 24 : 12 };
 }
+function endDrag() { if (drag) { stage.classList.remove("dragging"); drag = null; } }
 addEventListener("pointermove", e => {
-  if (!drag) return;
-  const r = stage.getBoundingClientRect(), k = scale || 1;
-  const x = Math.round(((e.clientX - r.left) / k - drag.dx) / 10) * 10, y = Math.round(((e.clientY - r.top) / k - drag.dy) / 10) * 10;
-  if (Math.abs(x - drag.n.x) + Math.abs(y - drag.n.y) > 4) drag.moved = true;
-  drag.n.x = Math.max(drag.n.w / 2 + 10, x); drag.n.y = Math.max(0, y);
+  if (!drag || e.pointerId !== drag.id) return;
+  const k = scale || 1;
+  if (!drag.on) {
+    if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < drag.lim) return;
+    drag.on = true; stage.classList.add("dragging");
+    try { drag.b.setPointerCapture(drag.id); } catch (err) {}
+  }
+  e.preventDefault();
+  drag.n.x = Math.max(drag.n.w / 2 + 10, Math.round((drag.x0 + (e.clientX - drag.sx) / k) / 10) * 10);
+  drag.n.y = Math.max(0, Math.round((drag.y0 + (e.clientY - drag.sy) / k) / 10) * 10);
   placeNodeEls(); drawEdges();
 });
-addEventListener("pointerup", () => {
-  if (!drag) return;
-  const d = drag; drag = null;
-  if (!d.moved) return;
+addEventListener("pointercancel", endDrag);
+addEventListener("pointerup", e => {
+  if (!drag || (e.pointerId !== undefined && e.pointerId !== drag.id)) return;
+  const d = drag; endDrag();
+  if (!d.on) return;                                  /* был обычный клик — блок не трогаем */
+  if (d.n.x === d.x0 && d.n.y === d.y0) return;
   d.b.dataset.drag = "1";
   cfg[d.n.id].pos = { x: d.n.x, y: d.n.y };
   if (typeof dirty !== "undefined") dirty.add(d.n.id);
   relayout(); saveSoon();
+  setStatus("Блок передвинут. Вернуть все блоки на места — кнопка вверху", 6000);
 });
 function refreshNode(id) {
   const n = byId[id], b = nodeEls[id], c = cfg[id];
