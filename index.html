@@ -227,6 +227,7 @@ body { margin: 0; }
     </select>
     <button class="btn" id="allBtn" disabled>Скачать общий реестр</button>
     <button class="btn" id="idsBtn" disabled title="Проверить список ID долгов: в каком блоке воронки каждый из них">Проверить список ID</button>
+    <button class="btn" id="addBlk" title="Добавить новый блок на схему">Добавить блок</button>
     <button class="btn" id="resetPos" hidden title="Вернуть все блоки на места, заданные схемой">Вернуть блоки на места</button>
     <span class="status" id="status" role="status"></span>
     <div class="rulesinfo" id="rulesInfo" hidden></div>
@@ -322,16 +323,16 @@ function addNode(d) {
 function autoPos(n) {
   const p = byId[n.p];
   if (!p) return { x: Math.round(W0 / 2), y: 0 };
-  let x = p.x, y = p.y + 82;
+  const sib = kids(n.p).filter(k => k !== n);
   const busy = (x, y, w) => N.some(o => o !== n && Math.abs(o.y - y) < 56 && Math.abs(o.x - x) < (o.w + w) / 2 + 18);
+  let y = sib.length ? Math.max.apply(null, sib.map(s => s.y)) : p.y + 82;
+  const right = sib.length ? sib.reduce((a, b) => (b.x > a.x ? b : a)) : null;
+  const x0 = right ? right.x + right.w / 2 + 30 + n.w / 2 : p.x;
   for (let row = 0; row < 10; row++) {
-    for (let k = 0; k < 5; k++) {
-      const dx = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (n.w + 30);
-      if (!busy(x + dx, y, n.w)) return { x: Math.max(n.w / 2 + 10, x + dx), y };
-    }
+    for (let k = 0; k < 6; k++) { const cx = x0 + k * (n.w + 30); if (!busy(cx, y, n.w)) return { x: Math.round(cx), y: Math.round(y) }; }
     y += 82;
   }
-  return { x, y };
+  return { x: Math.round(x0), y: Math.round(y) };
 }
 function placeAll() {
   N.forEach(n => {
@@ -675,25 +676,94 @@ function mkPath(d, cls, marker) {
   svg.appendChild(p); return p;
 }
 let retPath = null;
-/* маршрут стрелки: горизонталь идёт сразу под родителем, чтобы не проходить сквозь чужие блоки */
-function edgeD(a, n) {
-  const x1 = a.x, yb = a.y + NH, x2 = n.x, y2 = n.y;
-  if (x1 === x2 && y2 > yb) return `M${x1} ${yb}V${y2 - 1}`;
-  if (y2 >= yb + 34) {
-    const ey = Math.round(Math.min(yb + 34, (yb + y2) / 2));
-    return `M${x1} ${yb}V${ey}H${x2}V${y2 - 1}`;
-  }
-  const side = x2 >= x1 ? 1 : -1;
-  const lane = Math.round(x1 + side * (a.w / 2 + 26));
-  return `M${Math.round(x1 + side * a.w / 2)} ${Math.round(a.y + NH / 2)}H${lane}V${y2 - 26}H${x2}V${y2 - 1}`;
+/* ---------- маршрутизация связей: привязка к сторонам блока и обход чужих блоков ---------- */
+const PAD = 14;                                   /* зазор, который линия держит от блоков */
+function obstacles(skip) {
+  const out = [];
+  N.forEach(n => { if (skip.indexOf(n.id) < 0) out.push({ x1: n.x - n.w / 2 - PAD, y1: n.y - PAD, x2: n.x + n.w / 2 + PAD, y2: n.y + NH + PAD }); });
+  return out;
 }
+function segHit(ax, ay, bx, by, r) {
+  return Math.min(ax, bx) < r.x2 && Math.max(ax, bx) > r.x1 && Math.min(ay, by) < r.y2 && Math.max(ay, by) > r.y1;
+}
+/* штраф: пересечение чужого блока дороже всего, затем «неродной» выход, изломы, длина, порядок */
+function scorePath(pts, rs, pen, idx) {
+  let hit = 0, len = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    len += Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]);
+    for (let k = 0; k < rs.length; k++) if (segHit(a[0], a[1], b[0], b[1], rs[k])) { hit++; break; }
+  }
+  return hit * 10000 + (pen || 0) + (pts.length - 2) * 20 + len * 0.1 + (idx || 0) * 2;
+}
+function pickPath(c, rs) {
+  let best = c[0], bs = scorePath(c[0].p, rs, c[0].k, 0);
+  for (let i = 1; i < c.length; i++) { const v = scorePath(c[i].p, rs, c[i].k, i); if (v < bs) { bs = v; best = c[i]; } }
+  return best.p;
+}
+function toD(pts) {
+  let d = "M" + pts[0][0] + " " + pts[0][1];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    d += b[0] === a[0] ? "V" + b[1] : (b[1] === a[1] ? "H" + b[0] : "L" + b[0] + " " + b[1]);
+  }
+  return d;
+}
+function lanes(p1, p2) {
+  const o = [], d = p2 - p1;
+  if (d <= 18) return o;
+  [(p1 + p2) / 2, p1 + 22, p2 - 22, p1 + 40, p2 - 40].forEach(v => { v = Math.round(v); if (v > p1 + 6 && v < p2 - 6 && o.indexOf(v) < 0) o.push(v); });
+  return o;
+}
+/* возвращает d-атрибут связи «родитель → потомок» */
+function route(a, n) {
+  const rs = obstacles([a.id, n.id]);
+  const aT = [a.x, a.y], aB = [a.x, a.y + NH], aL = [a.x - a.w / 2, a.y + NH / 2], aR = [a.x + a.w / 2, a.y + NH / 2];
+  const nT = [n.x, n.y - 1], nB = [n.x, n.y + NH + 1], nL = [n.x - n.w / 2 - 1, n.y + NH / 2], nR = [n.x + n.w / 2 + 1, n.y + NH / 2];
+  const c = [];
+  if (nT[1] > aB[1]) {                                      /* потомок ниже: низ → верх (основной вид связи) */
+    if (Math.abs(a.x - n.x) < 2) c.push({ p: [aB, nT], k: 0 });
+    lanes(aB[1], nT[1]).forEach(ly => c.push({ p: [aB, [a.x, ly], [n.x, ly], nT], k: 0 }));
+  }
+  if (nL[0] > aR[0]) {                                      /* потомок правее: правый бок → левый */
+    if (Math.abs(aR[1] - nL[1]) < 2) c.push({ p: [aR, nL], k: 500 });
+    lanes(aR[0], nL[0]).forEach(lx => c.push({ p: [aR, [lx, aR[1]], [lx, nL[1]], nL], k: 500 }));
+  }
+  if (nR[0] < aL[0]) {                                      /* потомок левее */
+    if (Math.abs(aL[1] - nR[1]) < 2) c.push({ p: [aL, nR], k: 500 });
+    lanes(nR[0], aL[0]).forEach(lx => c.push({ p: [aL, [lx, aL[1]], [lx, nR[1]], nR], k: 500 }));
+  }
+  if (nB[1] < aT[1]) {                                      /* потомок выше: верх → низ */
+    if (Math.abs(a.x - n.x) < 2) c.push({ p: [aT, nB], k: 700 });
+    lanes(nB[1], aT[1]).forEach(ly => c.push({ p: [aT, [a.x, ly], [n.x, ly], nB], k: 700 }));
+  }
+  /* обходные: выход вбок, затем сверху или снизу в потомка */
+  [1, -1].forEach(side => {
+    const sp = side > 0 ? aR : aL;
+    [a.x + side * (a.w / 2 + 34), n.x + side * (n.w / 2 + 34)].forEach(lx => {
+      lx = Math.round(lx);
+      if (nT[1] - 26 !== sp[1]) c.push({ p: [sp, [lx, sp[1]], [lx, nT[1] - 26], [n.x, nT[1] - 26], nT], k: 1100 });
+      if (nB[1] + 26 !== sp[1]) c.push({ p: [sp, [lx, sp[1]], [lx, nB[1] + 26], [n.x, nB[1] + 26], nB], k: 1400 });
+    });
+    const ly = Math.round(a.y + NH + 26), tgt = side > 0 ? nL : nR, lx2 = Math.round(tgt[0] - side * 34);
+    c.push({ p: [aB, [a.x, ly], [lx2, ly], [lx2, tgt[1]], tgt], k: 1100 });
+  });
+  if (!c.length) return toD([aB, [a.x, aB[1] + 26], [n.x, aB[1] + 26], nT]);
+  return toD(pickPath(c, rs));
+}
+function edgeD(a, n) { return route(a, n); }
 /* пунктирный возврат «Удовлетворено (взыскатель)» → «Правопреемство на стороне должника» */
 function retD() {
   const a = byId.A2o, b = byId.A1;
   if (!a || !b) return null;
-  const sx = Math.round(a.x + a.w / 2), sy = Math.round(a.y + NH / 2);
-  const lane = Math.round(Math.max(sx + 21, b.x + b.w / 2 + 21));
-  return `M${sx} ${sy}H${lane}V${b.y - 15}H${Math.round(b.x + 15)}V${b.y - 1}`;
+  const rs = obstacles([a.id, b.id]);
+  const sp = [a.x + a.w / 2, a.y + NH / 2], ep = [b.x + 15, b.y - 1];
+  const c = [];
+  [a.x + a.w / 2 + 21, b.x + b.w / 2 + 40, Math.max(a.x, b.x) + 120, a.x + a.w / 2 + 70].forEach(lx => {
+    lx = Math.round(Math.max(lx, sp[0] + 12));
+    c.push({ p: [sp, [lx, sp[1]], [lx, b.y - 15], [ep[0], b.y - 15], ep], k: 0 });
+  });
+  return toD(pickPath(c, rs));
 }
 function drawEdges() {
   Object.values(edgeEls).forEach(p => p.remove());
@@ -1226,6 +1296,41 @@ function showIdCheck() {
   panel.appendChild(el("p", "hint", "Поиск идёт по колонкам: " + (idColumns().join(", ") || "—") + ". Учитываются текущие фильтры на схеме."));
 }
 $("#idsBtn").addEventListener("click", showIdCheck);
+/* ---------- добавление блока прямо на схеме ---------- */
+function newCode() { let i = 1; while (byId["U" + i]) i++; return "U" + i; }
+function syncNodeList() { cfg.__nodes = N.filter(x => x.custom).map(x => ({ id: x.id, p: x.p, t: x.t, k: x.k, w: x.w })); }
+function showAddBlock() {
+  if (REMOTE && !TOKEN) { setStatus("Войдите для правки, чтобы добавить блок", 4000); showAuth(); return; }
+  editing = true; stage.classList.add("editing");
+  panel.replaceChildren();
+  panel.appendChild(mini("← Назад", () => renderPanel()));
+  panel.appendChild(el("h2", null, "Новый блок"));
+  panel.appendChild(el("p", "hint", "Блок появится под выбранным родителем. Потом его можно перетащить мышью, а критерии отбора задать в таблице правил по коду блока."));
+  const nm = el("input"); nm.type = "text"; nm.style.width = "100%"; nm.placeholder = "Например: Исполнительная надпись нотариуса"; nm.setAttribute("aria-label", "Название блока");
+  panel.appendChild(section("Название", nm));
+  const par = selectEl(N.map(x => [x.id, x.t + " (" + x.id + ")"]), sel || "dead", "Родитель");
+  panel.appendChild(section("Родитель (откуда идёт стрелка)", par));
+  const kd = selectEl([["stage", "Этап"], ["group", "Сегмент"], ["result", "Исход суда"], ["root", "Исходная группа"], ["final", "Дальнейшее действие"]], "stage", "Тип блока");
+  panel.appendChild(section("Тип блока", kd));
+  const cd = el("input"); cd.type = "text"; cd.value = newCode(); cd.style.width = "100%"; cd.setAttribute("aria-label", "Код блока");
+  panel.appendChild(section("Код блока (для таблицы правил)", cd));
+  const msg = el("p", "empty"); msg.hidden = true; msg.setAttribute("role", "alert"); panel.appendChild(msg);
+  const go = el("button", "btn primary", "Создать блок"); go.type = "button";
+  go.addEventListener("click", () => {
+    const t = nm.value.trim(), code = cd.value.trim();
+    if (!t) { msg.textContent = "Впишите название блока"; msg.hidden = false; return; }
+    if (!/^[A-Za-zА-Яа-я0-9_-]+$/.test(code)) { msg.textContent = "Код блока: только буквы, цифры, дефис и подчёркивание"; msg.hidden = false; return; }
+    if (byId[code]) { msg.textContent = "Блок с кодом «" + code + "» уже есть"; msg.hidden = false; return; }
+    const n = addNode({ id: code, p: par.value, t, k: kd.value, w: Math.min(260, Math.max(170, Math.round(t.length * 5.5) + 40)) });
+    cfg[code] = defCfg(n); syncNodeList();
+    if (typeof dirty !== "undefined") { dirty.add(code); N.forEach(x => dirty.add(x.id)); }
+    relayout(); select(code); store.save();
+    setStatus("Блок «" + t + "» создан. Код " + code + " — впишите его в таблицу правил, чтобы задать критерии", 9000);
+  });
+  const acts = el("div", "actions"); acts.appendChild(go); panel.appendChild(acts);
+  const first = panel.querySelector("input"); if (first) first.focus();
+}
+$("#addBlk").addEventListener("click", showAddBlock);
 $("#resetPos").addEventListener("click", () => {
   if (REMOTE && !TOKEN) { setStatus("Войдите для правки, чтобы вернуть блоки на места для всех", 5000); showAuth(); return; }
   N.forEach(n => { if (cfg[n.id] && cfg[n.id].pos) { cfg[n.id].pos = null; if (typeof dirty !== "undefined") dirty.add(n.id); } });
@@ -1642,6 +1747,15 @@ function renderEditor(n, c) {
   const done = el("button", "btn primary", "Готово"); done.type = "button";
   done.addEventListener("click", () => { if (c.txt) c.txt = c.txt.filter(t => t.trim()); c.q = c.q.filter(t => t.trim()); editing = false; recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); });
   acts.appendChild(done);
+  if (n.custom) acts.appendChild(mini("Удалить блок", () => {
+    if (kids(n.id).length) { setStatus("Сначала перенесите или удалите вложенные блоки", 5000); return; }
+    const id = n.id;
+    N.splice(N.indexOf(n), 1); delete byId[id]; delete cfg[id];
+    if (nodeEls[id]) { nodeEls[id].remove(); delete nodeEls[id]; }
+    syncNodeList(); if (typeof dirty !== "undefined") N.forEach(x => dirty.add(x.id));
+    editing = false; sel = "dead"; relayout(); store.save(); renderPanel();
+    setStatus("Блок удалён", 3000);
+  }, "danger"));
   acts.appendChild(mini("Вернуть блок на место", () => { c.pos = null; if (typeof dirty !== "undefined") dirty.add(sel); relayout(); store.save(); }));
   acts.appendChild(mini("Вернуть все блоки на места", () => { N.forEach(x => { if (cfg[x.id]) cfg[x.id].pos = null; if (typeof dirty !== "undefined") dirty.add(x.id); }); relayout(); store.save(); }));
   acts.appendChild(mini("Вернуть критерии по умолчанию", () => { cfg[sel] = defCfg(n); recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); }, "danger"));
