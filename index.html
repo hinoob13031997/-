@@ -228,6 +228,7 @@ body { margin: 0; }
     <button class="btn" id="allBtn" disabled>Скачать общий реестр</button>
     <button class="btn" id="idsBtn" disabled title="Проверить список ID долгов: в каком блоке воронки каждый из них">Проверить список ID</button>
     <button class="btn" id="addBlk" title="Добавить новый блок на схему">Добавить блок</button>
+    <button class="btn" id="dlRules" title="Скачать таблицу правил с текущими блоками и критериями">Скачать таблицу правил</button>
     <button class="btn" id="resetPos" hidden title="Вернуть все блоки на места, заданные схемой">Вернуть блоки на места</button>
     <span class="status" id="status" role="status"></span>
     <div class="rulesinfo" id="rulesInfo" hidden></div>
@@ -1333,6 +1334,109 @@ function showAddBlock() {
   const first = panel.querySelector("input"); if (first) first.focus();
 }
 $("#addBlk").addEventListener("click", showAddBlock);
+
+/* ---------- выгрузка актуальной таблицы правил ---------- */
+const OPCAP = { filled: "заполнено", empty: "пусто", eq: "равно", ne: "не равно", lt: "меньше", le: "меньше или равно", gt: "больше", ge: "больше или равно", contains: "содержит", ncontains: "не содержит", in: "одно из списка", nin: "не из списка", older: "дата старше N лет", newer: "дата не старше N лет", emptynewer: "пусто или дата не старше N лет" };
+function rulesRows() {
+  const out = [];
+  N.forEach(n => {
+    const c = cfg[n.id], head = [n.id, n.t, "", "", "", "", "", c.l === "or" ? "ИЛИ" : "", c.from || "", (c.sub || []).join("; "), n.p || "", KIND[n.k] || ""];
+    if (!c.c.length) { out.push(head); return; }
+    c.c.forEach((x, i) => {
+      const r = x.r, row = i === 0 ? head.slice() : [n.id, n.t, "", "", "", "", "", "", "", "", "", ""];
+      row[2] = x.t || "";
+      if (r) { row[3] = r.col || ""; row[4] = OPCAP[r.op] || ""; row[5] = r.val || ""; row[6] = r.cmp || ""; }
+      out.push(row);
+    });
+  });
+  return out;
+}
+function blockRows() { return N.map(n => [n.id, n.t, n.p || "", pathText(n.id), KIND[n.k] || ""]); }
+const xmlEsc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const colName = i => { let s = "", k = i; do { s = String.fromCharCode(65 + (k % 26)) + s; k = Math.floor(k / 26) - 1; } while (k >= 0); return s; };
+function rowsXml(rows, from) {
+  let x = "";
+  rows.forEach((r, i) => {
+    const rn = from + i;
+    x += '<row r="' + rn + '">';
+    r.forEach((v, j) => { if (v === "" || v == null) return; x += '<c r="' + colName(j) + rn + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(v) + "</t></is></c>"; });
+    x += "</row>";
+  });
+  return x;
+}
+const CRCT = (() => { const t = new Uint32Array(256); for (let i = 0; i < 256; i++) { let c = i; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[i] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRCT[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(files) {                       /* files: [{name, data:Uint8Array}] без сжатия */
+  const parts = [], cd = []; let off = 0;
+  files.forEach(f => {
+    const nm = te.encode(f.name), cr = crc32(f.data), sz = f.data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint32(14, cr, true); lh.setUint32(18, sz, true); lh.setUint32(22, sz, true); lh.setUint16(26, nm.length, true);
+    parts.push(new Uint8Array(lh.buffer), nm, f.data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true);
+    ch.setUint32(16, cr, true); ch.setUint32(20, sz, true); ch.setUint32(24, sz, true); ch.setUint16(28, nm.length, true); ch.setUint32(42, off, true);
+    cd.push(new Uint8Array(ch.buffer), nm);
+    off += 30 + nm.length + sz;
+  });
+  let cdLen = 0; cd.forEach(x => cdLen += x.length);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
+  end.setUint32(12, cdLen, true); end.setUint32(16, off, true);
+  return new Blob(parts.concat(cd, [new Uint8Array(end.buffer)]), { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+async function entryBytes(file, ent) {
+  const lh = new DataView(await file.slice(ent.off, ent.off + 30).arrayBuffer());
+  const start = ent.off + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
+  const blob = file.slice(start, start + ent.csize);
+  if (ent.method === 0) return new Uint8Array(await blob.arrayBuffer());
+  if (ent.method !== 8) throw new Error("неизвестный способ сжатия в шаблоне");
+  return new Uint8Array(await new Response(blob.stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+}
+function putRows(xml, rows, lastCol) {
+  const body = rowsXml(rows, 2);
+  let x = xml.replace(/<sheetData>([\s\S]*?)<\/sheetData>/, (m, inner) => {
+    const head = (inner.match(/<row\b[^>]*r="1"[\s\S]*?<\/row>/) || [""])[0];
+    return "<sheetData>" + head + body + "</sheetData>";
+  });
+  const last = rows.length + 1;
+  x = x.replace(/<dimension[^>]*\/>/, '<dimension ref="A1:' + lastCol + last + '"/>');
+  x = x.replace(/<autoFilter[^>]*\/>/, '<autoFilter ref="A1:' + lastCol + last + '"/>');
+  return x;
+}
+async function downloadRules() {
+  const btn = $("#dlRules"); btn.disabled = true;
+  try {
+    setStatus("Готовлю таблицу правил…");
+    let r = null;
+    try { r = await fetch("rules-template.xlsx?_=" + Date.now(), { cache: "no-store" }); } catch (e) { r = null; }
+    if (!r || !r.ok) r = await fetch("https://hinoob13031997.github.io/-/rules-template.xlsx?_=" + Date.now(), { cache: "no-store" });
+    if (!r.ok) throw new Error("не найден шаблон таблицы (rules-template.xlsx)");
+    const tpl = new File([await r.blob()], "t.xlsx");
+    const ents = await zipEntries(tpl);
+    const names = Object.keys(ents);
+    const wbx = utf8.decode(await entryBytes(tpl, ents["xl/workbook.xml"]));
+    const rels = {}; const rx = utf8.decode(await entryBytes(tpl, ents["xl/_rels/workbook.xml.rels"]));
+    for (const m of rx.matchAll(/<Relationship\b([^>]*?)\/?>/g)) { const id = (m[1].match(/\bId="([^"]*)"/) || [])[1], tg = (m[1].match(/\bTarget="([^"]*)"/) || [])[1]; if (id && tg) rels[id] = tg.startsWith("/") ? tg.slice(1) : "xl/" + tg.replace(/^\.\//, ""); }
+    const sheetPath = {}; let k = 0;
+    for (const m of wbx.matchAll(/<sheet\b([^>]*?)\/?>/g)) { k++; const nm = xmlDec((m[1].match(/\bname="([^"]*)"/) || [])[1] || ""), rid = (m[1].match(/\br:id="([^"]*)"/) || [])[1]; sheetPath[nm] = rels[rid] || "xl/worksheets/sheet" + k + ".xml"; }
+    const pr = sheetPath["Правила"], bl = sheetPath["Блоки (справочник)"];
+    if (!pr) throw new Error("в шаблоне нет листа «Правила»");
+    const out = [];
+    for (const nm of names) {
+      let data = await entryBytes(tpl, ents[nm]);
+      if (nm === pr) data = te.encode(putRows(utf8.decode(data), rulesRows(), "L"));
+      else if (nm === bl) data = te.encode(putRows(utf8.decode(data), blockRows(), "E"));
+      out.push({ name: nm, data });
+    }
+    const d = new Date(), two = x => String(x).padStart(2, "0");
+    await saveBlob(zipStore(out), "Таблица правил воронки " + two(d.getDate()) + "." + two(d.getMonth() + 1) + "." + d.getFullYear() + ".xlsx");
+    setStatus("Таблица правил скачана: блоков " + N.length, 5000);
+  } catch (e) { setStatus("Не удалось собрать таблицу правил: " + (e.message || e), 8000); }
+  finally { btn.disabled = false; }
+}
+$("#dlRules").addEventListener("click", downloadRules);
 $("#resetPos").addEventListener("click", () => {
   if (REMOTE && !TOKEN) { setStatus("Войдите для правки, чтобы вернуть блоки на места для всех", 5000); showAuth(); return; }
   N.forEach(n => { if (cfg[n.id] && cfg[n.id].pos) { cfg[n.id].pos = null; if (typeof dirty !== "undefined") dirty.add(n.id); } });
