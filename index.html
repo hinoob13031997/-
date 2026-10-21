@@ -1594,7 +1594,17 @@ $("#sheetSel").addEventListener("change", e => { try { if (DATA && DATA.big) { b
 const bar = $("#databar");
 ["dragenter", "dragover"].forEach(t => addEventListener(t, e => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) { e.preventDefault(); bar.classList.add("drag"); } }));
 ["dragleave", "drop"].forEach(t => addEventListener(t, e => { if (t === "drop" || e.target === document.documentElement || !e.relatedTarget) bar.classList.remove("drag"); }));
-addEventListener("drop", e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) { e.preventDefault(); loadFile(f); } });
+addEventListener("drop", e => { const f = e.dataTransfer && e.dataTransfer.files[0]; if (f) { e.preventDefault(); if (needLogin("Загружать файлы")) return; loadFile(f); } });
+/* загрузка выгрузки и таблицы правил — только в режиме правки */
+function needLogin(what) {
+  if (!REMOTE || TOKEN) return false;
+  setStatus(what + " можно только в режиме правки: введите пароль, затем нажмите кнопку ещё раз", 8000);
+  showAuth(); return true;
+}
+document.querySelectorAll('label[for="file"], label[for="rulesFile"]').forEach(l => {
+  l.addEventListener("click", e => { if (needLogin(l.htmlFor === "file" ? "Загружать Excel" : "Загружать таблицу правил")) e.preventDefault(); });
+  l.title = (l.title ? l.title + ". " : "") + "Доступно в режиме правки (нужен пароль)";
+});
 
 /* ---------- downloads ---------- */
 function safeName(s) { return s.replace(/[\\/:*?"<>|\n\r]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80); }
