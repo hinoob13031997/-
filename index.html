@@ -1788,7 +1788,9 @@ function applyShared(j) {
 }
 function paintSharedBtns() {
   const pub = $("#pubBtn"), sh = $("#sharedBtn"); if (!pub || !sh) return;
-  pub.hidden = !(REMOTE && FILEDATA());
+  pub.hidden = !REMOTE || !!(DATA && DATA.shared);
+  pub.disabled = !FILEDATA();
+  pub.title = FILEDATA() ? "Сохранить посчитанную воронку, чтобы коллеги увидели её без загрузки файла" : "Сначала загрузите Excel: после этого кнопка опубликует воронку для всех";
   sh.hidden = !(REMOTE && SHARED_META);
   if (SHARED_META) {
     sh.textContent = DATA && DATA.shared ? "Обновить общие данные" : "Показать общие данные";
@@ -1827,6 +1829,7 @@ function startShared() {
   document.addEventListener("visibilitychange", () => { if (!document.hidden) checkShared(); });
 }
 $("#pubBtn").addEventListener("click", publishShared);
+paintSharedBtns();
 $("#sharedBtn").addEventListener("click", () => checkShared(true));
 async function sharedDownloadAll() {
   const deep = $("#allMode").value === "deep";
@@ -2119,7 +2122,7 @@ N.forEach(n => refreshNode(n.id)); refreshStats(); fit(); select("dead");
 (async () => {
   try { DB = (await window.claude?.use("db")) || null; } catch (e) { DB = null; }
   try { DL = (await window.claude?.use("downloads")) || null; } catch (e) { DL = null; }
-  REMOTE = !DB; updateAuthBtn();
+  REMOTE = !DB; updateAuthBtn(); paintSharedBtns();
   if (REMOTE) { await initRemote(); return; }
   const saved = await store.load();
   if (saved) { applySaved(saved); N.forEach(n => refreshNode(n.id)); refreshStats(); if (!editing) renderPanel(); }
