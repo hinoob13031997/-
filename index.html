@@ -46,8 +46,8 @@
   --warn: #f0b05a; --warn-bg: #3a2c15; --sel: #ff4d55; --sel-halo: #5a1d22; color-scheme: dark;
 }
 * { box-sizing: border-box; }
-body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; padding-inline: 16px; padding-block: 20px 32px; }
-.wrap { max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; padding-inline: clamp(16px, 2vw, 32px); padding-block: 20px 32px; }
+.wrap { margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
 header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; }
 h1 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
 .stats { margin: 4px 0 0; color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
@@ -261,7 +261,7 @@ body { margin: 0; }
 
 <script>
 
-let W = 1120, H = 830, scale = 1; const NH = 48, W0 = 1120, H0 = 830;
+let W = 1120, H = 830, scale = 1, OX = 0, EW = 1120; const NH = 48, W0 = 1120, H0 = 830;
 /* c: критерии из документа, q: открытые вопросы, n: примечание, d: пояснение к блоку */
 const N = [
  {id:"root", t:"Все должники", x:560, y:0, w:190, k:"root", d:"Вся база. Воронка делит должников по статусу, наличию судебного акта и этапу правопреемства."},
@@ -776,6 +776,11 @@ function drawEdges() {
   /* svg должен совпадать со сценой по размеру: иначе viewBox сжимает линии, а блоки остаются на месте */
   svg.setAttribute("width", W); svg.setAttribute("height", H);
   svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  /* линии обхода могут уйти левее нуля или правее W: запоминаем запас, чтобы схема не обрезалась */
+  let mn = 0, mx = W;
+  svg.querySelectorAll("path").forEach(pa => { try { const bb = pa.getBBox(); if (bb.width || bb.height) { mn = Math.min(mn, bb.x); mx = Math.max(mx, bb.x + bb.width); } } catch (e) {} });
+  OX = mn < 0 ? Math.ceil(12 - mn) : 0;
+  EW = Math.ceil(Math.max(W, mx + 12)) + OX;
 }
 placeAll(); syncNodeEls(); drawEdges();
 
@@ -1883,10 +1888,11 @@ let manual = false;
 function apply(s) {
   scale = Math.min(1.6, Math.max(0.4, s));
   stage.style.transform = "scale(" + scale + ")";
-  sizer.style.width = W * scale + "px"; sizer.style.height = H * scale + "px";
+  sizer.style.width = Math.max(W, EW) * scale + "px"; sizer.style.height = H * scale + "px";
   stage.style.width = W + "px"; stage.style.height = H + "px";
+  stage.style.left = OX * scale + "px";
 }
-function fit() { manual = false; apply(Math.max(0.55, Math.min(1, (vp.clientWidth - 24) / W))); vp.scrollLeft = 0; }
+function fit() { manual = false; apply(Math.max(0.55, Math.min(1, (vp.clientWidth - 24) / Math.max(W, EW)))); vp.scrollLeft = 0; }
 $("#zIn").addEventListener("click", () => { manual = true; apply(scale + 0.1); });
 $("#zOut").addEventListener("click", () => { manual = true; apply(scale - 0.1); });
 $("#zFit").addEventListener("click", fit);
