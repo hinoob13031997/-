@@ -1336,6 +1336,7 @@ function showAddBlock() {
 $("#addBlk").addEventListener("click", showAddBlock);
 
 /* ---------- выгрузка актуальной таблицы правил ---------- */
+const enc = new TextEncoder();
 const OPCAP = { filled: "заполнено", empty: "пусто", eq: "равно", ne: "не равно", lt: "меньше", le: "меньше или равно", gt: "больше", ge: "больше или равно", contains: "содержит", ncontains: "не содержит", in: "одно из списка", nin: "не из списка", older: "дата старше N лет", newer: "дата не старше N лет", emptynewer: "пусто или дата не старше N лет" };
 function rulesRows() {
   const out = [];
@@ -1369,7 +1370,7 @@ function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c =
 function zipStore(files) {                       /* files: [{name, data:Uint8Array}] без сжатия */
   const parts = [], cd = []; let off = 0;
   files.forEach(f => {
-    const nm = te.encode(f.name), cr = crc32(f.data), sz = f.data.length;
+    const nm = enc.encode(f.name), cr = crc32(f.data), sz = f.data.length;
     const lh = new DataView(new ArrayBuffer(30));
     lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
     lh.setUint32(14, cr, true); lh.setUint32(18, sz, true); lh.setUint32(22, sz, true); lh.setUint16(26, nm.length, true);
@@ -1426,8 +1427,8 @@ async function downloadRules() {
     const out = [];
     for (const nm of names) {
       let data = await entryBytes(tpl, ents[nm]);
-      if (nm === pr) data = te.encode(putRows(utf8.decode(data), rulesRows(), "L"));
-      else if (nm === bl) data = te.encode(putRows(utf8.decode(data), blockRows(), "E"));
+      if (nm === pr) data = enc.encode(putRows(utf8.decode(data), rulesRows(), "L"));
+      else if (nm === bl) data = enc.encode(putRows(utf8.decode(data), blockRows(), "E"));
       out.push({ name: nm, data });
     }
     const d = new Date(), two = x => String(x).padStart(2, "0");
