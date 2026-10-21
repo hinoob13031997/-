@@ -228,6 +228,8 @@ body { margin: 0; }
     </select>
     <button class="btn" id="allBtn" disabled>Скачать общий реестр</button>
     <button class="btn" id="idsBtn" disabled title="Проверить список ID долгов: в каком блоке воронки каждый из них">Проверить список ID</button>
+    <button class="btn primary" id="pubBtn" hidden title="Сохранить посчитанную воронку, чтобы коллеги увидели её без загрузки файла">Опубликовать для всех</button>
+    <button class="btn" id="sharedBtn" hidden title="Показать данные, которые опубликовал коллега">Общие данные</button>
     <button class="btn" id="addBlk" title="Добавить новый блок на схему">Добавить блок</button>
     <button class="btn" id="dlRules" title="Скачать таблицу правил с текущими блоками и критериями">Скачать таблицу правил</button>
     <button class="btn" id="resetPos" hidden title="Вернуть все блоки на места, заданные схемой">Вернуть блоки на места</button>
@@ -586,6 +588,7 @@ async function initRemote() {
   const tick = () => { if (document.hidden || editing || saving || dirty.size) return; pullConfig().catch(() => {}); };
   setInterval(tick, 150000);
   document.addEventListener("visibilitychange", tick);
+  startShared();
 }
 
 /* ---------- nodes and edges ---------- */
@@ -885,7 +888,7 @@ let onlyRecent = false;
 try { onlyRecent = localStorage.getItem("funnel-recent") === "1"; } catch (e) {}
 /* строки, которые участвуют в воронке: при включённом тумблере скрыты должники, умершие больше 5 месяцев назад */
 const nRows = () => DATA.big ? DATA.n : DATA.rows.length;
-const AMT_COL = "Сумма долга + ГП Остаток";
+const AMT_COL = "Сумма долга + ГП Остаток", ID_COL = "ID договора внутренний", DEAD_COL = "Дата смерти";
 let minAmt = 0;
 try { minAmt = Number(localStorage.getItem("funnel-minamt")) || 0; } catch (e) {}
 function visibleRows() {
@@ -930,10 +933,9 @@ paintSeg();
   });
   inp.addEventListener("blur", () => { inp.value = minAmt > 0 ? nf.format(minAmt) : ""; });
 }
-function recalc() {
-  if (!DATA) { RES = null; OWN = {}; return; }
-  if (bigMissing() && !bigBusy) { setStatus("Подгружаю колонку из файла…"); bigLoad(DATA.f, DATA.sheet, DATA.ctx); return; }
-  RES = {}; OWN = {};
+/* расчёт блоков по правилам; base — строки, с которых начинается воронка */
+function computeSets(base) {
+  const RES = {}, OWN = {};
   const tests = {}, subs = {};
   N.forEach(n => {
     const c = cfg[n.id];
@@ -949,7 +951,7 @@ function recalc() {
     const n = byId[id], c = cfg[id], t = tests[id];
     let out;
     const baseId = c.from && byId[c.from] && c.from !== id ? c.from : n.p;
-    if (!baseId) out = visibleRows();
+    if (!baseId) out = base;
     else {
       out = calc(baseId);
       if (t.length) {
@@ -969,6 +971,15 @@ function recalc() {
     busy.delete(id); return RES[id] = out;
   };
   N.forEach(n => calc(n.id));
+  return { res: RES, own: OWN };
+}
+function recalc() {
+  if (!DATA) { RES = null; OWN = {}; return; }
+  if (DATA.shared) sharedRecalc();
+  else {
+    if (bigMissing() && !bigBusy) { setStatus("Подгружаю колонку из файла…"); bigLoad(DATA.f, DATA.sheet, DATA.ctx); return; }
+    const r = computeSets(visibleRows()); RES = r.res; OWN = r.own;
+  }
   N.forEach(n => refreshNode(n.id));
   updatePanelData();
 }
@@ -1094,7 +1105,7 @@ async function forEachDataRow(file, ctx, path, onHeader, onRow, prog) {
   }, prog);
 }
 function neededColNames() {
-  const s = new Set(["Дата смерти", "Сумма долга + ГП Остаток"]);
+  const s = new Set(["Дата смерти", "Сумма долга + ГП Остаток", ID_COL]);
   N.forEach(n => cfg[n.id].c.forEach(c => { const r = c.r; if (r && r.col) { s.add(r.col); if (r.cmp) s.add(r.cmp); if (r.col === "Дата Исполнительного документа") s.add("№ Исполнительного документа"); } }));
   return s;
 }
@@ -1107,13 +1118,14 @@ async function bigLoad(file, sheetName, ctx0) {
     const ctx = ctx0 || await bigOpen(file, progFn("Читаю словарь строк…"));
     const sh = ctx.sheets.find(s => s.name === sheetName) || ctx.sheets.reduce((a, b) => b.size > a.size ? b : a);
     const want = neededColNames();
-    let cols = null, wantIdx = [], arrs = [], n = 0;
+    let cols = null, wantIdx = [], arrs = [], n = 0, idK = -1;
+    const idRaw = [];
     const memo = new Map();
     const t0 = performance.now();
     await forEachDataRow(file, ctx, sh.path, vals => {
       const used = {};
       cols = Array.from(vals, (v, i) => { let t = v == null || String(v).trim() === "" ? "Колонка " + (i + 1) : cleanHead(String(v).trim()); if (used[t]) { used[t]++; t = t + " (" + used[t] + ")"; } else used[t] = 1; return t; });
-      cols.forEach((nm, i) => { if (want.has(nm)) { wantIdx.push(i); arrs.push([]); } });
+      cols.forEach((nm, i) => { if (want.has(nm)) { wantIdx.push(i); arrs.push([]); if (nm === ID_COL) idK = wantIdx.length - 1; } });
     }, (i, vals) => {
       n++;
       for (let k = 0; k < wantIdx.length; k++) {
@@ -1121,10 +1133,11 @@ async function bigLoad(file, sheetName, ctx0) {
         if (typeof v === "string") { r = memo.get(v); if (r === undefined) { r = normStr(v); if (memo.size < 400000) memo.set(v, r); } }
         else r = v == null ? null : normVal(v);
         arrs[k].push(r);
+        if (k === idK) idRaw.push(v == null ? "" : String(v).trim());
       }
     }, progFn("Читаю файл:"));
     if (!cols) throw new Error("лист пустой");
-    DATA = { file: file.name, f: file, big: true, ctx, cols, n, sheet: sh.name, sheets: ctx.sheets.map(s => s.name), loaded: new Set(wantIdx), rows: null };
+    DATA = { file: file.name, f: file, big: true, ctx, cols, n, sheet: sh.name, sheets: ctx.sheets.map(s => s.name), loaded: new Set(wantIdx), rows: null, idRaw: idK >= 0 ? idRaw : null };
     NORM = []; STR = []; wantIdx.forEach((c, k) => NORM[c] = arrs[k]);
     previewCache = {};
     const ss = $("#sheetSel"); ss.replaceChildren(); DATA.sheets.forEach(s => ss.appendChild(new Option(s, s))); ss.value = sh.name; ss.hidden = DATA.sheets.length < 2;
@@ -1532,7 +1545,7 @@ async function loadRulesFile(file) {
 $("#rulesFile").addEventListener("change", e => { const f = e.target.files[0]; if (f) loadRulesFile(f); e.target.value = ""; });
 
 /* ---------- file loading ---------- */
-function setInfo(html) { const f = $("#fileinfo"); f.replaceChildren(); html.forEach(x => f.appendChild(typeof x === "string" ? document.createTextNode(x) : x)); }
+function setInfo(html) { const f = $("#fileinfo"); f.replaceChildren(); html.forEach(x => f.appendChild(typeof x === "string" ? document.createTextNode(x) : x)); paintSharedBtns(); }
 function pickSheet(wb, name) {
   const ws = wb.Sheets[name];
   const arr = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
@@ -1586,7 +1599,7 @@ addEventListener("drop", e => { const f = e.dataTransfer && e.dataTransfer.files
 /* ---------- downloads ---------- */
 function safeName(s) { return s.replace(/[\\/:*?"<>|\n\r]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80); }
 function aoa(idxs) { const out = [DATA.cols.slice()]; for (const i of idxs) out.push(DATA.rows[i]); return out; }
-function sheetFrom(a) { return XLSX.utils.aoa_to_sheet(a, { cellDates: true, dateNF: "dd.mm.yyyy" }); }
+function sheetFrom(a) { return XLSX.utils.aoa_to_sheet(a, { cellDates: true, dateNF: "dd\\.mm\\.yyyy" }); }   /* точки экранированы: без этого SheetJS падает на датах */
 async function saveBook(wb, filename) {
   try {
     const data = XLSX.write(wb, { bookType: "xlsx", type: "array", cellDates: true });
@@ -1615,6 +1628,7 @@ async function downloadBlock(id) {
 async function downloadAll() {
   if (!RES) return;
   if (DATA.big) return bigDownloadAll();
+  if (DATA.shared) return sharedDownloadAll();
   const deep = $("#allMode").value === "deep";
   const ruled = N.filter(n => OWN[n.id] > 0);
   const summary = [["Блок", "Путь", "Критерии блока", "Должников", "Правил в выборке"]];
@@ -1638,6 +1652,200 @@ async function downloadAll() {
   await saveBook(wb, "Общий реестр воронки.xlsx");
 }
 $("#allBtn").addEventListener("click", downloadAll);
+
+/* ---------- общие данные: один загружает выгрузку и публикует, у остальных воронка появляется сама ---------- */
+/* В репозиторий уходит только посчитанное: внутренний ID, дата смерти, остаток долга + ГП и состав блоков.
+   data.bin — сжатый JSON с данными, data-meta.json — маленькая метка версии, по ней остальные узнают об обновлении. */
+const FILEDATA = () => (DATA && !DATA.shared ? DATA : null);
+let SH = null;                         // { sets: {nodeId: Uint8Array-битсет}, own: {nodeId: число правил} }
+let SHARED_META = null, SHARED_VER = null, sharedEtag = null, sharedBusy = false, sharedNotified = null, sharedTimer = null;
+async function gzipBytes(u8) { return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer()); }
+async function gunzipBytes(u8) { return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer()); }
+const cleanId = v => { let t = v == null ? "" : String(v).trim(); if (/^-?\d+\.0+$/.test(t)) t = t.replace(/\.0+$/, ""); return t; };
+const fmtWhen = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }); };
+function sharedRecalc() {
+  const n = DATA.shared.n, vis = visibleRows(), mask = new Uint8Array(n);
+  for (const i of vis) mask[i] = 1;
+  RES = {}; OWN = {};
+  const memo = new Map();
+  const setOf = id => { let x = id; while (x && byId[x]) { if (SH.sets[x]) return SH.sets[x]; x = byId[x].p; } return null; };
+  N.forEach(nd => {
+    OWN[nd.id] = SH.own[nd.id] || 0;
+    const bits = setOf(nd.id);
+    if (!bits) { RES[nd.id] = []; return; }
+    if (!memo.has(bits)) { const out = []; for (let i = 0; i < n; i++) if (mask[i] && (bits[i >> 3] & (1 << (i & 7)))) out.push(i); memo.set(bits, out); }
+    RES[nd.id] = memo.get(bits);
+  });
+}
+function buildShared() {
+  const n = nRows(), all = Array.from({ length: n }, (_, i) => i);
+  const { res, own } = computeSets(all);
+  const ci = colIdx(ID_COL);
+  const ids = DATA.idRaw ? DATA.idRaw.map(cleanId) : DATA.rows.map(r => cleanId(r[ci]));
+  const A = colIdx(AMT_COL) >= 0 ? NORM[colIdx(AMT_COL)] : null, D = colIdx(DEAD_COL) >= 0 ? NORM[colIdx(DEAD_COL)] : null;
+  const amt = A ? Array.from({ length: n }, (_, i) => typeof A[i] === "number" ? Math.round(A[i] * 100) / 100 : null) : null;
+  const dd = D ? Array.from({ length: n }, (_, i) => typeof D[i] === "number" && Math.abs(D[i]) > 1e9 ? Math.round(D[i] / 864e5) : null) : null;
+  const sets = {}, map = {}, seen = new Map(), owns = {};
+  N.forEach(nd => {
+    const bits = new Uint8Array((n + 7) >> 3);
+    for (const i of res[nd.id]) bits[i >> 3] |= 1 << (i & 7);
+    const k = b64(bits);
+    if (!seen.has(k)) { seen.set(k, nd.id); sets[nd.id] = k; }
+    map[nd.id] = seen.get(k);
+    if (own[nd.id]) owns[nd.id] = own[nd.id];
+  });
+  const ver = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  return { v: 1, ver, at: new Date().toISOString(), file: DATA.file, sheet: DATA.sheet || "", n, ids, amt, dd, own: owns, map, sets };
+}
+async function repoShas() {
+  const r = await fetch(API.replace(/\/$/, "") + "?ref=" + BR + "&_=" + Date.now(), { headers: ghHeaders(), cache: "no-store" });
+  if (!r.ok) throw ghErr(r, "GitHub");
+  const o = {}; (await r.json()).forEach(f => { o[f.name] = f.sha; }); return o;
+}
+async function ghPutBytes(file, u8, message, sha) {
+  const body = { message, content: b64(u8), branch: BR };
+  if (sha) body.sha = sha;
+  const r = await fetch(API + file, { method: "PUT", headers: ghHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(body) });
+  if (!r.ok) throw ghErr(r, "GitHub");
+  return (await r.json()).content.sha;
+}
+async function publishShared() {
+  if (!FILEDATA() || !RES) { setStatus("Сначала загрузите выгрузку Excel", 4000); return; }
+  if (!TOKEN) { setStatus("Введите пароль правки, затем снова нажмите «Опубликовать для всех»", 6000); showAuth(); return; }
+  if (colIdx(ID_COL) < 0) { setStatus("В файле нет колонки «" + ID_COL + "», публиковать нечего", 6000); return; }
+  if (bigBusy || bigMissing()) { setStatus("Файл ещё дочитывается, нажмите чуть позже", 4000); return; }
+  const btn = $("#pubBtn"); btn.disabled = true;
+  try {
+    setStatus("Готовлю данные для публикации…"); await tick();
+    const snap = buildShared();
+    const gz = await gzipBytes(te.encode(JSON.stringify(snap)));
+    const mb = (gz.length / 1048576).toLocaleString("ru-RU", { maximumFractionDigits: 1 });
+    if (gz.length > 45 * 1048576) throw new Error("данные получились слишком большими (" + mb + " МБ)");
+    const meta = { ver: snap.ver, at: snap.at, file: snap.file, n: snap.n, size: gz.length };
+    for (let attempt = 0; ; attempt++) {
+      try {
+        setStatus("Отправляю на GitHub (" + mb + " МБ)…");
+        const shas = await repoShas();
+        await ghPutBytes("data.bin", gz, "Общие данные: " + snap.file + ", " + snap.n + " строк", shas["data.bin"]);
+        await ghPutBytes("data-meta.json", te.encode(JSON.stringify(meta, null, 1)), "Общие данные: метка версии", shas["data-meta.json"]);
+        break;
+      } catch (e) { if ((e.status === 409 || e.status === 422) && attempt < 2) continue; throw e; }
+    }
+    SHARED_META = meta; SHARED_VER = snap.ver; sharedNotified = snap.ver; sharedEtag = null;
+    paintSharedBtns();
+    setStatus("Опубликовано для всех: " + nf.format(snap.n) + " строк. У коллег воронка обновится в течение минуты", 9000);
+  } catch (e) {
+    if (e.status === 401 || e.status === 403) { TOKEN = null; editing = false; updateAuthBtn(); setStatus("Нет прав записи: войдите заново и повторите публикацию", 8000); }
+    else setStatus("Не удалось опубликовать: " + (e.message || e), 9000);
+  } finally { btn.disabled = false; }
+}
+async function fetchMeta() {
+  try {
+    const h = ghHeaders(); if (sharedEtag) h["If-None-Match"] = sharedEtag;
+    const r = await fetch(API + "data-meta.json?ref=" + BR, { headers: h, cache: "no-store" });
+    if (r.status === 304) return { same: true };
+    if (r.status === 404) return { none: true };
+    if (r.ok) { const j = await r.json(); const meta = JSON.parse(td.decode(unb64(j.content))); sharedEtag = r.headers.get("ETag"); return { meta }; }
+  } catch (e) {}
+  /* API недоступен (лимит запросов, сеть): берём метку с самого сайта, он отстаёт на минуту-две */
+  try {
+    const f = await fetch("data-meta.json?_=" + Date.now(), { cache: "no-store" });
+    if (f.status === 404) return { none: true };
+    if (f.ok) return { meta: await f.json() };
+  } catch (e) {}
+  return { fail: true };
+}
+async function fetchDataBin() {
+  try {
+    const r = await fetch(API + "data.bin?ref=" + BR + "&_=" + Date.now(), { headers: ghHeaders({ Accept: "application/vnd.github.raw" }), cache: "no-store" });
+    if (r.ok) return new Uint8Array(await r.arrayBuffer());
+  } catch (e) {}
+  const f = await fetch("data.bin?_=" + Date.now(), { cache: "no-store" });
+  if (!f.ok) throw new Error("файл с данными не найден (" + f.status + ")");
+  return new Uint8Array(await f.arrayBuffer());
+}
+function applyShared(j) {
+  const n = j.n, cols = [ID_COL];
+  if (j.dd) cols.push(DEAD_COL);
+  if (j.amt) cols.push(AMT_COL);
+  const rows = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const r = [j.ids[i]];
+    if (j.dd) { const v = j.dd[i]; if (v == null) r.push(null); else { const t = new Date(v * 864e5); r.push(new Date(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate())); } }
+    if (j.amt) r.push(j.amt[i]);
+    rows[i] = r;
+  }
+  const dec = {}; Object.entries(j.sets).forEach(([k, v]) => { dec[k] = unb64(v); });
+  SH = { sets: {}, own: j.own || {} };
+  Object.entries(j.map).forEach(([id, k]) => { SH.sets[id] = dec[k]; });
+  DATA = { file: j.file, shared: { ver: j.ver, at: j.at, n }, cols, rows, sheet: j.sheet || "", sheets: [] };
+  previewCache = {}; buildCaches(); SHARED_VER = j.ver; sharedNotified = j.ver;
+  $("#sheetSel").hidden = true;
+  recalc();
+  setInfo(["Общие данные: ", el("b", null, j.file), " · опубликованы " + fmtWhen(j.at) + " · " + nf.format(n) + " строк. Числа посчитаны по правилам на момент публикации."]);
+  $("#allBtn").disabled = false; $("#idsBtn").disabled = false; $("#allMode").disabled = false;
+  if (sel) select(sel);
+}
+function paintSharedBtns() {
+  const pub = $("#pubBtn"), sh = $("#sharedBtn"); if (!pub || !sh) return;
+  pub.hidden = !(REMOTE && FILEDATA());
+  sh.hidden = !(REMOTE && SHARED_META);
+  if (SHARED_META) {
+    sh.textContent = DATA && DATA.shared ? "Обновить общие данные" : "Показать общие данные";
+    sh.title = "Опубликованы " + fmtWhen(SHARED_META.at) + ": " + SHARED_META.file + ", " + nf.format(SHARED_META.n) + " строк";
+  }
+}
+/* force: пользователь сам нажал кнопку — показать общие данные, даже если открыт свой файл */
+async function checkShared(force) {
+  if (!REMOTE || sharedBusy) return;
+  sharedBusy = true;
+  try {
+    if (force) sharedEtag = null;
+    const m = await fetchMeta();
+    if (m.none) { SHARED_META = null; paintSharedBtns(); if (force) setStatus("Общих данных пока нет: их публикует тот, кто загрузил выгрузку", 5000); return; }
+    if (m.fail) { if (force) setStatus("Нет связи с GitHub, попробуйте ещё раз", 5000); return; }
+    if (m.meta) { SHARED_META = m.meta; paintSharedBtns(); }
+    const meta = SHARED_META; if (!meta) return;
+    const showing = DATA && DATA.shared;
+    if (FILEDATA() && !force) {
+      if (meta.ver !== SHARED_VER && meta.ver !== sharedNotified) { sharedNotified = meta.ver; setStatus("Опубликованы новые общие данные. На экране ваш файл; переключиться — кнопка «Показать общие данные»", 9000); }
+      return;
+    }
+    if (showing && DATA.shared.ver === meta.ver) { if (force) setStatus("Общие данные актуальны", 2500); return; }
+    setStatus("Загружаю общие данные…");
+    const j = JSON.parse(td.decode(await gunzipBytes(await fetchDataBin())));
+    if (FILEDATA() && !force) return;               /* пока грузили, пользователь открыл свой файл */
+    applyShared(j);
+    setStatus(showing ? "Общие данные обновлены" : "Загружены общие данные", 4000);
+  } catch (e) { sharedEtag = null; setStatus("Не удалось загрузить общие данные: " + (e.message || e), 7000); }
+  finally { sharedBusy = false; }
+}
+function startShared() {
+  if (sharedTimer) return;
+  checkShared();
+  sharedTimer = setInterval(() => { if (!document.hidden) checkShared(); }, 60000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) checkShared(); });
+}
+$("#pubBtn").addEventListener("click", publishShared);
+$("#sharedBtn").addEventListener("click", () => checkShared(true));
+async function sharedDownloadAll() {
+  const deep = $("#allMode").value === "deep";
+  const ruled = N.filter(n => OWN[n.id] > 0);
+  const summary = [["Блок", "Путь", "Критерии блока", "Должников", "Правил в выборке"]];
+  N.forEach(n => summary.push([n.t, pathText(n.id), critText(n.id), n.p && !OWN[n.id] ? "нет данных" : RES[n.id].length, OWN[n.id] || 0]));
+  const descRuled = id => { const out = []; (function w(x) { kids(x).forEach(k => { if (OWN[k.id] > 0) out.push(k.id); w(k.id); }); })(id); return out; };
+  const n = DATA.rows.length, sets = {};
+  if (deep) ruled.forEach(nd => { const s = new Uint8Array(n); RES[nd.id].forEach(i => s[i] = 1); sets[nd.id] = s; });
+  const parts = ["﻿" + csvLine(["Блок", "Путь"].concat(DATA.cols))];
+  setStatus("Готовлю файл…"); await tick();
+  ruled.forEach(nd => {
+    const D = deep ? descRuled(nd.id) : [], lab = [nd.t, pathText(nd.id)], buf = [];
+    for (const i of RES[nd.id]) { if (deep && D.some(d => sets[d][i])) continue; buf.push(csvLine(lab.concat(DATA.rows[i]))); }
+    parts.push(buf.join(""));
+  });
+  await saveBlob(new Blob(parts, { type: "text/csv;charset=utf-8" }), "Общий реестр воронки.csv");
+  await saveBlob(new Blob(["﻿" + summary.map(csvLine).join("")], { type: "text/csv;charset=utf-8" }), "Сводка воронки.csv");
+}
 
 /* ---------- panel ---------- */
 let sel = null;
@@ -1727,15 +1935,15 @@ function renderView(n, c, path) {
     else body.appendChild(el("p", "empty", "Формулировки не заданы."));
     if (c.c.length) {
       const det = el("details"); det.appendChild(el("summary", null, "Правила расчёта из таблицы (" + c.c.length + ")"));
-      const ul = el("ul", "crit"); c.c.forEach(x => { const li = el("li", null, x.t); if (x.r) li.appendChild(el("span", "rulechip", "Правило: " + describeRule(x.r) + (DATA && colIdx(x.r.col) < 0 ? " (колонки нет в файле)" : ""))); ul.appendChild(li); });
+      const ul = el("ul", "crit"); c.c.forEach(x => { const li = el("li", null, x.t); if (x.r) li.appendChild(el("span", "rulechip", "Правило: " + describeRule(x.r) + (FILEDATA() && colIdx(x.r.col) < 0 ? " (колонки нет в файле)" : ""))); ul.appendChild(li); });
       det.appendChild(ul); body.appendChild(det);
     }
   } else if (c.c.length) {
     body = el("ul", "crit");
     c.c.forEach(x => {
       const li = el("li", null, x.t);
-      if (x.r) { const ch = el("span", "rulechip", "Правило: " + describeRule(x.r) + (DATA && colIdx(x.r.col) < 0 ? " (колонки нет в файле)" : "")); li.appendChild(ch); }
-      else if (DATA) li.appendChild(el("span", "rulechip none", "Не привязан к колонке, на выборку не влияет"));
+      if (x.r) { const ch = el("span", "rulechip", "Правило: " + describeRule(x.r) + (FILEDATA() && colIdx(x.r.col) < 0 ? " (колонки нет в файле)" : "")); li.appendChild(ch); }
+      else if (FILEDATA()) li.appendChild(el("span", "rulechip none", "Не привязан к колонке, на выборку не влияет"));
       body.appendChild(li);
     });
   } else body = el("p", "empty", kids(n.id).length ? "Собственных критериев нет. Они заданы у вложенных блоков." : "Критерии для этого блока не заданы.");
@@ -1785,13 +1993,13 @@ function ruleBuilder(crit) {
   const draw = () => {
     box.replaceChildren();
     const r = crit.r;
-    const cols = DATA ? DATA.cols : [];
-    if (!DATA && !r) { box.appendChild(el("p", "hint", "Загрузите Excel, чтобы привязать критерий к колонкам.")); return; }
+    const cols = FILEDATA() ? DATA.cols : [];
+    if (!FILEDATA() && !r) { box.appendChild(el("p", "hint", "Загрузите Excel, чтобы привязать критерий к колонкам.")); return; }
     const colSel = selectEl([["", "Колонка: не привязан"]].concat(cols.map(c => [c, c])), r ? r.col : "", "Колонка");
     colSel.addEventListener("change", () => { if (!colSel.value) { crit.r = null; crit.off = true; } else if (!crit.r) { delete crit.off; crit.r = { col: colSel.value, op: "filled", cmp: "", val: "" }; } else crit.r.col = colSel.value; draw(); recalc(); changed(); });
     box.appendChild(colSel);
     if (!crit.r) return;
-    if (DATA && colIdx(crit.r.col) < 0) box.appendChild(el("span", "warn", "Колонки «" + crit.r.col + "» нет в загруженном файле. Правило пока не применяется."));
+    if (FILEDATA() && colIdx(crit.r.col) < 0) box.appendChild(el("span", "warn", "Колонки «" + crit.r.col + "» нет в загруженном файле. Правило пока не применяется."));
     const opSel = selectEl(OPS, crit.r.op || "filled", "Условие");
     opSel.addEventListener("change", () => { crit.r.op = opSel.value; if (!CMP_OPS.includes(opSel.value)) crit.r.cmp = ""; draw(); recalc(); changed(); });
     box.appendChild(opSel);
