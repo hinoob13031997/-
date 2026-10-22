@@ -151,6 +151,8 @@ ul.crit li.q::before { background: var(--warn); border-radius: 50%; }
 .rulesinfo { flex: 1 1 100%; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
 .rulesinfo b { color: var(--fg); }
 .rulesinfo .w { color: #b4540a; display: block; }
+.fileinfo .colwarn { display: block; margin-top: 4px; color: #b4540a; }
+.fileinfo .colwarn b { color: #b4540a; }
 .amt { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); min-height: 34px; }
 .amt input { width: 96px; font: inherit; font-size: 13px; font-weight: 600; color: var(--fg); background: transparent; border: 0; border-bottom: 1px solid var(--line); padding: 3px 2px; text-align: right; }
 .amt input:focus { outline: none; border-bottom-color: var(--accent); }
@@ -318,7 +320,7 @@ const nf = new Intl.NumberFormat("ru-RU");
 
 /* ---------- editable config (criteria, questions, notes) ---------- */
 /* Правила по умолчанию = таблица правил (лист «Правила»). Загруженная таблица заменяет их целиком. */
-const DEFTBL = {"root":{"l":"","from":"","sub":[],"rows":[]},"dead":{"l":"","from":"","sub":[],"rows":[{"t":"Есть дата смерти","r":{"col":"Дата смерти","op":"filled","val":"","cmp":""}}]},"A":{"l":"","from":"","sub":[],"rows":[{"t":"Долг просужен","r":{"col":"Дата Исполнительного документа","op":"filled","val":"","cmp":""}},{"t":"Дата СА < Дата смерти","r":{"col":"Дата Исполнительного документа","op":"lt","val":"","cmp":"Дата смерти"}}]},"B":{"l":"","from":"","sub":[],"rows":[{"t":"СА отсутствует","r":{"col":"Дата Исполнительного документа","op":"empty","val":"","cmp":""}},{"t":"СА недействителен (данных нет, провести анализ)","r":null}]},"A1":{"l":"","from":"","sub":[],"rows":[]},"A1s":{"l":"","from":"","sub":["A1c","A1o","A1na","A1nb"],"rows":[{"t":"Замена взыскателя установлена","r":{"col":"Наличие определения о замене взыскателя","op":"eq","val":"Да","cmp":""}},{"t":"Срок предъявления ИД не истёк (дата окончания ИП + 3 года; пусто = не окончено)","r":{"col":"Дата окончания ИП","op":"emptynewer","val":"3","cmp":""}}]},"A1c":{"l":"","from":"A1","sub":[],"rows":[{"t":"Рабочий статус: наследство (контроль, отправка в ГАС, повторно)","r":{"col":"Рабочий статус","op":"in","val":"Отправка Наследство ГАС; Контроль Наследство; Наследство повторно; Наследство","cmp":""}}]},"A1r":{"l":"","from":"","sub":[],"rows":[]},"A1n":{"l":"","from":"A1","sub":[],"rows":[{"t":"Есть определение об отказе в замене","r":{"col":"Наличие определения об отказе в замене","op":"eq","val":"Да","cmp":""}}]},"A1o":{"l":"","from":"A1","sub":[],"rows":[{"t":"Есть определение о замене должника","r":{"col":"Наличие определения о замене должника.","op":"eq","val":"Да","cmp":""}}]},"A1na":{"l":"","from":"","sub":[],"rows":[{"t":"Определение об отказе в ПП + статус «Стоп работа»","r":{"col":"Рабочий статус","op":"eq","val":"Стоп работа","cmp":""}}]},"A1nb":{"l":"","from":"","sub":[],"rows":[{"t":"Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»","r":{"col":"Рабочий статус","op":"eq","val":"ЧЖ отказ Правопреемство","cmp":""}}]},"A2":{"l":"","from":"","sub":[],"rows":[]},"A2s":{"l":"","from":"","sub":["A2c","A2o","A2na","A2nb"],"rows":[{"t":"Долг просужен цедентом","r":{"col":"Дата Исполнительного документа","op":"filled","val":"","cmp":""}},{"t":"Замена взыскателя не установлена","r":{"col":"Наличие определения о замене взыскателя","op":"eq","val":"Нет","cmp":""}},{"t":"Срок предъявления ИД не истёк (дата окончания ИП + 3 года; пусто = не окончено)","r":{"col":"Дата окончания ИП","op":"emptynewer","val":"3","cmp":""}},{"t":"Наличие имущества (по обогащению или залог)","r":{"col":"Есть имущество по обогащению","op":"eq","val":"1","cmp":""}},{"t":"Сумма по ИП более 100 000 руб.","r":{"col":"Сумма долга по ИП","op":"gt","val":"100000","cmp":""}}]},"A2c":{"l":"","from":"A2","sub":[],"rows":[{"t":"Рабочий статус: замена взыскателя (контроль, повторно)","r":{"col":"Рабочий статус","op":"in","val":"Замена взыскателя контроль; Замена взыскателя; Замена взыскателя повторно","cmp":""}}]},"A2r":{"l":"","from":"","sub":[],"rows":[]},"A2n":{"l":"","from":"A2","sub":[],"rows":[{"t":"Есть определение об отказе в замене","r":{"col":"Наличие определения об отказе в замене","op":"eq","val":"Да","cmp":""}}]},"A2o":{"l":"","from":"A2","sub":[],"rows":[{"t":"Есть определение о замене взыскателя","r":{"col":"Наличие определения о замене взыскателя","op":"eq","val":"Да","cmp":""}}]},"A2na":{"l":"","from":"","sub":[],"rows":[{"t":"Критерии архива не заданы","r":null}]},"A2nb":{"l":"","from":"","sub":[],"rows":[{"t":"Критерии обжалования сформулировать","r":null}]},"Bm":{"l":"","from":"","sub":[],"rows":[{"t":"Срок окончания КД больше 3 лет назад","r":{"col":"Срок займа, дата","op":"older","val":"3","cmp":""}}]},"Ba":{"l":"","from":"","sub":[],"rows":[{"t":"Срок окончания КД меньше 3 лет назад","r":{"col":"Срок займа, дата","op":"newer","val":"3","cmp":""}}]},"I":{"l":"","from":"","sub":[],"rows":[{"t":"Наличие КД","r":null},{"t":"Наличие имущества (обогащение или залог)","r":{"col":"Есть имущество по обогащению","op":"eq","val":"1","cmp":""}},{"t":"Сумма по АПП ≥ 100 000 руб.","r":{"col":"Сумма долга по Цессии","op":"ge","val":"100000","cmp":""}}]},"Is":{"l":"","from":"","sub":["Ic","Io","Ina","Inb","Iw"],"rows":[]},"Ic":{"l":"","from":"I","sub":[],"rows":[{"t":"Рабочий статус: иск наследство (контроль, повторно)","r":{"col":"Рабочий статус","op":"in","val":"Иск наследство контроль; Иск наследство повторно; Иск наследство","cmp":""}}]},"Ir":{"l":"","from":"","sub":[],"rows":[]},"Iw":{"l":"","from":"","sub":[],"rows":[{"t":"Стоимость имущества","r":null}]},"In":{"l":"","from":"","sub":[],"rows":[]},"Io":{"l":"","from":"","sub":[],"rows":[]},"Ina":{"l":"","from":"","sub":[],"rows":[]},"Inb":{"l":"","from":"","sub":[],"rows":[{"t":"Критерии обжалования сформулировать","r":null}]}};
+const DEFTBL = {"root":{"l":"","from":"","sub":[],"rows":[]},"dead":{"l":"","from":"","sub":[],"rows":[{"t":"Есть дата смерти","r":{"col":"Дата смерти","op":"filled","val":"","cmp":""}}]},"A":{"l":"","from":"","sub":[],"rows":[{"t":"Долг просужен","r":{"col":"Дата Исполнительного документа","op":"filled","val":"","cmp":""}},{"t":"Дата СА < Дата смерти","r":{"col":"Дата Исполнительного документа","op":"lt","val":"","cmp":"Дата смерти"}}]},"B":{"l":"","from":"","sub":[],"rows":[{"t":"СА отсутствует","r":{"col":"Дата Исполнительного документа","op":"empty","val":"","cmp":""}},{"t":"СА недействителен (данных нет, провести анализ)","r":null}]},"A1":{"l":"","from":"","sub":[],"rows":[]},"A1s":{"l":"","from":"","sub":["A1c","A1o","A1na","A1nb"],"rows":[{"t":"Замена взыскателя установлена","r":{"col":"Наличие определения о замене","op":"eq","val":"Да","cmp":""}},{"t":"Срок предъявления ИД не истёк (дата окончания ИП + 3 года; пусто = не окончено)","r":{"col":"Дата окончания ИП","op":"emptynewer","val":"3","cmp":""}}]},"A1c":{"l":"","from":"A1","sub":[],"rows":[{"t":"Рабочий статус: наследство (контроль, отправка в ГАС, повторно)","r":{"col":"Рабочий статус","op":"in","val":"Отправка Наследство ГАС; Контроль Наследство; Наследство повторно; Наследство","cmp":""}}]},"A1r":{"l":"","from":"","sub":[],"rows":[]},"A1n":{"l":"","from":"A1","sub":[],"rows":[{"t":"Есть определение об отказе в замене","r":{"col":"Наличие определения об отказе в замене","op":"eq","val":"Да","cmp":""}}]},"A1o":{"l":"","from":"A1","sub":[],"rows":[{"t":"Есть определение о замене должника","r":{"col":"Наличие определения о замене должника","op":"eq","val":"Да","cmp":""}}]},"A1na":{"l":"","from":"","sub":[],"rows":[{"t":"Определение об отказе в ПП + статус «Стоп работа»","r":{"col":"Рабочий статус","op":"eq","val":"Стоп работа","cmp":""}}]},"A1nb":{"l":"","from":"","sub":[],"rows":[{"t":"Определение об отказе в ПП + статус «ЧЖ отказ Правопреемство»","r":{"col":"Рабочий статус","op":"eq","val":"ЧЖ отказ Правопреемство","cmp":""}}]},"A2":{"l":"","from":"","sub":[],"rows":[]},"A2s":{"l":"","from":"","sub":["A2c","A2o","A2na","A2nb"],"rows":[{"t":"Долг просужен цедентом","r":{"col":"Дата Исполнительного документа","op":"filled","val":"","cmp":""}},{"t":"Замена взыскателя не установлена","r":{"col":"Наличие определения о замене","op":"eq","val":"Нет","cmp":""}},{"t":"Срок предъявления ИД не истёк (дата окончания ИП + 3 года; пусто = не окончено)","r":{"col":"Дата окончания ИП","op":"emptynewer","val":"3","cmp":""}},{"t":"Наличие имущества (по обогащению или залог)","r":{"col":"Есть имущество по обогащению","op":"eq","val":"1","cmp":""}},{"t":"Сумма по ИП более 100 000 руб.","r":{"col":"Сумма долга по ИП","op":"gt","val":"100000","cmp":""}}]},"A2c":{"l":"","from":"A2","sub":[],"rows":[{"t":"Рабочий статус: замена взыскателя (контроль, повторно)","r":{"col":"Рабочий статус","op":"in","val":"Замена взыскателя контроль; Замена взыскателя; Замена взыскателя повторно","cmp":""}}]},"A2r":{"l":"","from":"","sub":[],"rows":[]},"A2n":{"l":"","from":"A2","sub":[],"rows":[{"t":"Есть определение об отказе в замене","r":{"col":"Наличие определения об отказе в замене","op":"eq","val":"Да","cmp":""}}]},"A2o":{"l":"","from":"A2","sub":[],"rows":[{"t":"Есть определение о замене взыскателя","r":{"col":"Наличие определения о замене","op":"eq","val":"Да","cmp":""}}]},"A2na":{"l":"","from":"","sub":[],"rows":[{"t":"Критерии архива не заданы","r":null}]},"A2nb":{"l":"","from":"","sub":[],"rows":[{"t":"Критерии обжалования сформулировать","r":null}]},"Bm":{"l":"","from":"","sub":[],"rows":[{"t":"Срок окончания КД больше 3 лет назад","r":{"col":"Срок займа, дата","op":"older","val":"3","cmp":""}}]},"Ba":{"l":"","from":"","sub":[],"rows":[{"t":"Срок окончания КД меньше 3 лет назад","r":{"col":"Срок займа, дата","op":"newer","val":"3","cmp":""}}]},"I":{"l":"","from":"","sub":[],"rows":[{"t":"Наличие КД","r":null},{"t":"Наличие имущества (обогащение или залог)","r":{"col":"Есть имущество по обогащению","op":"eq","val":"1","cmp":""}},{"t":"Сумма по АПП ≥ 100 000 руб.","r":{"col":"Сумма долга по Цессии","op":"ge","val":"100000","cmp":""}}]},"Is":{"l":"","from":"","sub":["Ic","Io","Ina","Inb","Iw"],"rows":[]},"Ic":{"l":"","from":"I","sub":[],"rows":[{"t":"Рабочий статус: иск наследство (контроль, повторно)","r":{"col":"Рабочий статус","op":"in","val":"Иск наследство контроль; Иск наследство повторно; Иск наследство","cmp":""}}]},"Ir":{"l":"","from":"","sub":[],"rows":[]},"Iw":{"l":"","from":"","sub":[],"rows":[{"t":"Стоимость имущества","r":null}]},"In":{"l":"","from":"","sub":[],"rows":[]},"Io":{"l":"","from":"","sub":[],"rows":[]},"Ina":{"l":"","from":"","sub":[],"rows":[]},"Inb":{"l":"","from":"","sub":[],"rows":[{"t":"Критерии обжалования сформулировать","r":null}]}};
 const KINDMAP = t => { const x = String(t || "").toLowerCase().trim(); if (!x) return ""; if (/исходн/.test(x)) return "root"; if (/сегмент/.test(x)) return "group"; if (/этап/.test(x)) return "stage"; if (/исход|результат/.test(x)) return "result"; if (/действ/.test(x)) return "final"; return ""; };
 function addNode(d) {
   const n = { id: String(d.id), p: d.p || "", t: String(d.t || d.id), k: d.k || "stage", c: [], q: [], w: Number(d.w) || 190, x: Number(d.x) || 0, y: Number(d.y) || 0, custom: true };
@@ -834,7 +836,42 @@ function buildCaches() {
   }
 }
 const cleanHead = t => { const m = String(t).match(/^[^\[\]]*\[(.*)\]$/); return m && m[1].trim() ? m[1].trim() : t; };
-const colIdx = name => DATA ? DATA.cols.indexOf(name) : -1;
+/* Колонки выгрузки ищутся по названию без учёта регистра, точек и лишних пробелов,
+   плюс известные переименования: правила работают и со старой, и с новой выгрузкой. */
+const COL_ALIASES = [
+  ["Наличие определения о замене", "Наличие определения о замене взыскателя"],
+  ["Определение о замене.Дата", "Определение о заменевзыскателя.Дата", "Определение о замене взыскателя.Дата"],
+];
+/* колонки реестра от 21.10.2026 — для выпадающего списка таблицы правил, когда файл не загружен */
+const KNOWN_COLS = ["ID договора внутренний", "ID договора внешний", "ID заемщика", "Сумма долга + ГП Остаток", "Дата смерти", "Статус недействительности ИНН", "Адрес нотариуса", "Номер договора", "Дата договора", "Срок займа, дата", "Дата Заявления в суд правопреемство", "Дата Определения суда правопреемство", "Определение суда. Удовлетворено правопреемство", "Определение суда. Отказ правопреемство", "Дата Заявления в суд Наследство", "Дата Определения суда Наследство", "Определение суда. Удовлетворено Наследство", "Определение суда. Отказ Наследство", "№ судебного дела", "Дата вступления в законную силу", "Оператор взаимодействия", "Номер ИП", "Дата возбуждения ИП", "Дата окончания ИП", "Сумма долга по ИП", "Взыскатель по ИП (ИНН)", "Взыскатель по ИП (Наименование)", "Дата последнего платежа", "Наименование цедента", "Наименование цессии в КСК", "№ Исполнительного документа", "Дата Исполнительного документа", "Тип Исполнительного документа", "Ид в офисе", "Место нахождения ИД", "Сумма долга по Цессии", "Нет имущества по обогащению", "Есть имущество по обогащению", "Группа статуса", "Дата рабочего статуса", "Вид судебного взыскания", "Рабочий статус", "Предыдущий рабочий статус", "Тип должника", "Определения о замене должника.Дата", "Наличие определения о замене должника", "Определение о замене.Дата", "Наличие определения о замене", "Определение об отказе в замене.Дата", "Наличие определения об отказе в замене"];
+const colKey = s => String(s).toLowerCase().replace(/ё/g, "е").replace(/[\s.]+/g, " ").trim();
+function colKeys(name) {
+  const k = colKey(name), g = COL_ALIASES.find(g => g.some(x => colKey(x) === k));
+  return g ? [k].concat(g.map(colKey).filter(x => x !== k)) : [k];
+}
+const colIdx = name => {
+  if (!DATA || name == null || name === "") return -1;
+  const i = DATA.cols.indexOf(name); if (i >= 0) return i;
+  if (!DATA._ck || DATA._ck.cols !== DATA.cols) { const m = new Map(); DATA.cols.forEach((c, j) => { const k = colKey(c); if (!m.has(k)) m.set(k, j); }); DATA._ck = { cols: DATA.cols, m }; }
+  for (const k of colKeys(name)) { const j = DATA._ck.m.get(k); if (j !== undefined) return j; }
+  return -1;
+};
+const realCol = name => { const i = colIdx(name); return i >= 0 ? DATA.cols[i] : null; };
+/* колонки из правил, которых нет в открытом файле: { колонка: [названия блоков] } */
+function missingRuleCols() {
+  const out = {};
+  if (!FILEDATA()) return out;
+  N.forEach(n => cfg[n.id].c.forEach(c => { const r = c.r; if (!r || !r.col) return; [r.col, r.cmp].forEach(x => { if (x && colIdx(x) < 0) (out[x] = out[x] || []).includes(n.t) || out[x].push(n.t); }); }));
+  return out;
+}
+function missingNote() {
+  const m = missingRuleCols(), ks = Object.keys(m);
+  if (!ks.length) return null;
+  const w = el("span", "colwarn");
+  w.appendChild(el("b", null, "В файле нет колонок из правил — эти условия не применяются, числа в блоках неверны: "));
+  w.appendChild(document.createTextNode(ks.map(k => "«" + k + "» (" + m[k].join(", ") + ")").join("; ") + ". Проверьте название колонки в выгрузке или поправьте таблицу правил."));
+  return w;
+}
 
 function makeTest(r) {
   if (!DATA || !r || !r.col) return null;
@@ -1117,7 +1154,7 @@ async function bigLoad(file, sheetName, ctx0) {
     setStatus("Открываю большой файл…");
     const ctx = ctx0 || await bigOpen(file, progFn("Читаю словарь строк…"));
     const sh = ctx.sheets.find(s => s.name === sheetName) || ctx.sheets.reduce((a, b) => b.size > a.size ? b : a);
-    const want = neededColNames();
+    const want = neededColNames(), wantK = new Set([...want].flatMap(colKeys)), idKey = colKey(ID_COL);
     let cols = null, wantIdx = [], arrs = [], n = 0, idK = -1;
     const idRaw = [];
     const memo = new Map();
@@ -1125,7 +1162,7 @@ async function bigLoad(file, sheetName, ctx0) {
     await forEachDataRow(file, ctx, sh.path, vals => {
       const used = {};
       cols = Array.from(vals, (v, i) => { let t = v == null || String(v).trim() === "" ? "Колонка " + (i + 1) : cleanHead(String(v).trim()); if (used[t]) { used[t]++; t = t + " (" + used[t] + ")"; } else used[t] = 1; return t; });
-      cols.forEach((nm, i) => { if (want.has(nm)) { wantIdx.push(i); arrs.push([]); if (nm === ID_COL) idK = wantIdx.length - 1; } });
+      cols.forEach((nm, i) => { if (want.has(nm) || wantK.has(colKey(nm))) { wantIdx.push(i); arrs.push([]); if (idK < 0 && colKey(nm) === idKey) idK = wantIdx.length - 1; } });
     }, (i, vals) => {
       n++;
       for (let k = 0; k < wantIdx.length; k++) {
@@ -1143,7 +1180,7 @@ async function bigLoad(file, sheetName, ctx0) {
     const ss = $("#sheetSel"); ss.replaceChildren(); DATA.sheets.forEach(s => ss.appendChild(new Option(s, s))); ss.value = sh.name; ss.hidden = DATA.sheets.length < 2;
     bigBusy = false;
     recalc();
-    setInfo([el("b", null, file.name), " · лист «" + sh.name + "» · " + nf.format(n) + " строк · " + cols.length + " колонок (большой файл: в памяти " + wantIdx.length + " колонок, нужных для правил, чтение " + ((performance.now() - t0) / 1000).toFixed(0) + " с)"]);
+    setInfo([el("b", null, file.name), " · лист «" + sh.name + "» · " + nf.format(n) + " строк · " + cols.length + " колонок (большой файл: в памяти " + wantIdx.length + " колонок, нужных для правил, чтение " + ((performance.now() - t0) / 1000).toFixed(0) + " с)"].concat(missingNote() || []));
     $("#allBtn").disabled = false; $("#idsBtn").disabled = false; $("#allMode").disabled = false;
     setStatus("Файл загружен", 2500);
     if (sel) select(sel);
@@ -1156,7 +1193,7 @@ async function bigLoad(file, sheetName, ctx0) {
 /* правило сослалось на колонку, которой нет в памяти: перечитываем файл с ней */
 function bigMissing() {
   if (!DATA || !DATA.big) return false;
-  for (const nm of neededColNames()) { const i = DATA.cols.indexOf(nm); if (i >= 0 && !DATA.loaded.has(i)) return true; }
+  for (const nm of neededColNames()) { const i = colIdx(nm); if (i >= 0 && !DATA.loaded.has(i)) return true; }
   return false;
 }
 let previewCache = {};
@@ -1222,9 +1259,14 @@ async function bigDownloadAll() {
 
 
 /* ---------- проверка списка ID: в каком блоке каждый долг ---------- */
+/* где искать ID договора, по приоритету. ID заемщика и «Ид в офисе» не годятся:
+   у заемщика несколько договоров, а их значения совпадают с чужими ID договоров. */
+const ID_PRIORITY = ["ID договора внутренний", "ID договора внешний", "Номер договора"];
 function idColumns() {
   if (!DATA) return [];
-  return DATA.cols.filter(c => /^\s*(id|ид)\b/i.test(c) || /номер договора/i.test(c));
+  const out = ID_PRIORITY.map(realCol).filter(Boolean);
+  if (out.length) return out;
+  return DATA.cols.filter(c => (/^\s*(id|ид)\b/i.test(c) && !/офис|заем|заём/i.test(c)) || /номер договора/i.test(c));
 }
 const normId = v => { if (v == null) return ""; let t = String(v).trim(); if (!t) return ""; if (/^-?\d+\.0+$/.test(t)) t = t.replace(/\.0+$/, ""); return t.toUpperCase(); };
 function parseIdList(text) {
@@ -1254,18 +1296,22 @@ async function runIdCheck(list, box) {
   if (!DATA || !RES) { setStatus("Сначала загрузите файл с данными", 4000); return; }
   const cols = idColumns();
   if (!cols.length) { setStatus("В файле нет колонок с ID", 5000); return; }
-  const ci = cols.map(c => DATA.cols.indexOf(c));
+  const ci = cols.map(c => colIdx(c));
   const want = new Map(); list.forEach(t => want.set(normId(t), t));
   const found = new Map();
   const plan = finalBlockPlan();
-  const amtI = colIdx(AMT_COL), deadI = colIdx("Дата смерти"), innerI = DATA.cols.indexOf("ID договора внутренний");
+  const amtI = colIdx(AMT_COL), deadI = colIdx("Дата смерти"), innerI = colIdx(ID_COL);
+  const prio = new Map();                         /* ID -> номер колонки, по которой нашли; совпадение по более важной колонке вытесняет прежнее */
   const take = (i, vals) => {
-    let hitKey = null, hitCol = "";
-    for (let k = 0; k < ci.length; k++) { if (ci[k] < 0) continue; const key = normId(vals[ci[k]]); if (key && want.has(key) && !found.has(key)) { hitKey = key; hitCol = cols[k]; break; } }
     const b = blockAt(plan, i);
-    if (hitKey === null) return;
-    const code = b ? b[0] : "", nice = b ? (BLOCK_NICE[code] || b[1]) : "не проходит текущие фильтры";
-    found.set(hitKey, [want.get(hitKey), "да", code, nice, b ? b[2] : "", b ? b[3] : "", amtI >= 0 && vals[amtI] != null ? vals[amtI] : "", deadI >= 0 && vals[deadI] != null ? vals[deadI] : "", hitCol, innerI >= 0 && vals[innerI] != null ? vals[innerI] : ""]);
+    for (let k = 0; k < ci.length; k++) {
+      if (ci[k] < 0) continue;
+      const key = normId(vals[ci[k]]);
+      if (!key || !want.has(key) || (prio.has(key) && prio.get(key) <= k)) continue;
+      prio.set(key, k);
+      const code = b ? b[0] : "", nice = b ? (BLOCK_NICE[code] || b[1]) : "не проходит текущие фильтры";
+      found.set(key, [want.get(key), "да", code, nice, b ? b[2] : "", b ? b[3] : "", amtI >= 0 && vals[amtI] != null ? vals[amtI] : "", deadI >= 0 && vals[deadI] != null ? vals[deadI] : "", cols[k], innerI >= 0 && vals[innerI] != null ? vals[innerI] : ""]);
+    }
   };
   setStatus("Ищу ID в файле…");
   if (DATA.big) await forEachDataRow(DATA.f, DATA.ctx, DATA.ctx.sheets.find(s => s.name === DATA.sheet).path, () => {}, (i, vals) => { take(i, vals); }, progFn("Ищу ID:"));
@@ -1444,13 +1490,16 @@ async function downloadRules() {
     for (const m of rx.matchAll(/<Relationship\b([^>]*?)\/?>/g)) { const id = (m[1].match(/\bId="([^"]*)"/) || [])[1], tg = (m[1].match(/\bTarget="([^"]*)"/) || [])[1]; if (id && tg) rels[id] = tg.startsWith("/") ? tg.slice(1) : "xl/" + tg.replace(/^\.\//, ""); }
     const sheetPath = {}; let k = 0;
     for (const m of wbx.matchAll(/<sheet\b([^>]*?)\/?>/g)) { k++; const nm = xmlDec((m[1].match(/\bname="([^"]*)"/) || [])[1] || ""), rid = (m[1].match(/\br:id="([^"]*)"/) || [])[1]; sheetPath[nm] = rels[rid] || "xl/worksheets/sheet" + k + ".xml"; }
-    const pr = sheetPath["Правила"], bl = sheetPath["Блоки (справочник)"];
+    const pr = sheetPath["Правила"], bl = sheetPath["Блоки (справочник)"], kl = sheetPath["Колонки"];
+    const colList = (FILEDATA() ? DATA.cols : KNOWN_COLS).map(c => [c]);
     if (!pr) throw new Error("в шаблоне нет листа «Правила»");
     const out = [];
     for (const nm of names) {
       let data = await entryBytes(tpl, ents[nm]);
       if (nm === pr) data = enc.encode(putRows(utf8.decode(data), rulesRows(), "L"));
       else if (nm === bl) data = enc.encode(putRows(utf8.decode(data), blockRows(), "E"));
+      else if (nm === kl) data = enc.encode(putRows(utf8.decode(data), colList, "A"));
+      else if (nm === "xl/workbook.xml") data = enc.encode(utf8.decode(data).replace(/('Колонки'!\$A\$2:\$A\$)\d+/, "$1" + (colList.length + 1)));
       out.push({ name: nm, data });
     }
     const d = new Date(), two = x => String(x).padStart(2, "0");
@@ -1564,7 +1613,7 @@ function useSheet(name) {
   const { cols, rows } = pickSheet(DATA.wb, name);
   DATA.sheet = name; DATA.cols = cols; DATA.rows = rows;
   buildCaches(); recalc();
-  setInfo([el("b", null, DATA.file), " · лист «" + name + "» · " + nf.format(rows.length) + " строк · " + cols.length + " колонок"]);
+  setInfo([el("b", null, DATA.file), " · лист «" + name + "» · " + nf.format(rows.length) + " строк · " + cols.length + " колонок"].concat(missingNote() || []));
   $("#allBtn").disabled = false; $("#idsBtn").disabled = false; $("#allMode").disabled = false;
   if (sel) select(sel);
 }
@@ -2008,7 +2057,7 @@ function ruleBuilder(crit) {
     const r = crit.r;
     const cols = FILEDATA() ? DATA.cols : [];
     if (!FILEDATA() && !r) { box.appendChild(el("p", "hint", "Загрузите Excel, чтобы привязать критерий к колонкам.")); return; }
-    const colSel = selectEl([["", "Колонка: не привязан"]].concat(cols.map(c => [c, c])), r ? r.col : "", "Колонка");
+    const colSel = selectEl([["", "Колонка: не привязан"]].concat(cols.map(c => [c, c])), r ? (realCol(r.col) || r.col) : "", "Колонка");
     colSel.addEventListener("change", () => { if (!colSel.value) { crit.r = null; crit.off = true; } else if (!crit.r) { delete crit.off; crit.r = { col: colSel.value, op: "filled", cmp: "", val: "" }; } else crit.r.col = colSel.value; draw(); recalc(); changed(); });
     box.appendChild(colSel);
     if (!crit.r) return;
@@ -2018,7 +2067,7 @@ function ruleBuilder(crit) {
     box.appendChild(opSel);
     const op = crit.r.op || "filled";
     if (CMP_OPS.includes(op)) {
-      const cm = selectEl([["", "значение"]].concat(cols.map(c => ["col:" + c, "колонка: " + c])), crit.r.cmp ? "col:" + crit.r.cmp : "", "Сравнить с");
+      const cm = selectEl([["", "значение"]].concat(cols.map(c => ["col:" + c, "колонка: " + c])), crit.r.cmp ? "col:" + (realCol(crit.r.cmp) || crit.r.cmp) : "", "Сравнить с");
       cm.addEventListener("change", () => { crit.r.cmp = cm.value.startsWith("col:") ? cm.value.slice(4) : ""; draw(); recalc(); changed(); });
       box.appendChild(cm);
     }
