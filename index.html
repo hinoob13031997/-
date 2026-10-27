@@ -664,9 +664,9 @@ function refreshNode(id) {
   b.querySelectorAll(".cnt,.dc").forEach(x => x.remove());
   if (c.c.length) b.appendChild(el("span", "cnt", String(c.c.length)));
   if (RES) {
-    const nd = n.p && !OWN[id];
-    const d = el("span", "dc" + (nd ? " inh" : ""), nd ? "—" : nf.format(RES[id].length));
-    d.title = nd ? "Для блока нет данных в файле: привяжите критерии к колонкам" : "Должников в блоке";
+    const stale = DATA && DATA.shared && STALE.has(id), nd = !stale && n.p && !OWN[id];
+    const d = el("span", "dc" + (nd || stale ? " inh" : ""), stale ? "?" : nd ? "—" : nf.format(RES[id].length));
+    d.title = stale ? "Блок создан или его правила изменены после публикации общих данных: нужна новая публикация" : nd ? "Для блока нет данных в файле: привяжите критерии к колонкам" : "Должников в блоке";
     b.appendChild(d);
   }
 }
@@ -1012,7 +1012,7 @@ function computeSets(base) {
 }
 function recalc() {
   if (!DATA) { RES = null; OWN = {}; return; }
-  if (DATA.shared) sharedRecalc();
+  if (DATA.shared) { const before = [...STALE].join(); sharedRecalc(); if ([...STALE].join() !== before) sharedInfo(); }
   else {
     if (bigMissing() && !bigBusy) { setStatus("Подгружаю колонку из файла…"); bigLoad(DATA.f, DATA.sheet, DATA.ctx); return; }
     const r = computeSets(visibleRows()); RES = r.res; OWN = r.own;
@@ -1717,6 +1717,25 @@ $("#allBtn").addEventListener("click", downloadAll);
    data.bin — сжатый JSON с данными, data-meta.json — маленькая метка версии, по ней остальные узнают об обновлении. */
 const FILEDATA = () => (DATA && !DATA.shared ? DATA : null);
 let SH = null;                         // { sets: {nodeId: Uint8Array-битсет}, own: {nodeId: число правил} }
+/* блоки, которых не было в опубликованных данных или чьи правила поменялись после публикации:
+   их числа по общим данным посчитать нельзя, нужна новая публикация */
+let STALE = new Set();
+const ruleSig = id => { const c = cfg[id], n = byId[id]; return JSON.stringify([n.p || "", c.from || "", (c.sub || []).slice().sort(), c.l || "", c.c.map(x => x.r && x.r.col ? [x.r.col, x.r.op || "", String(x.r.val == null ? "" : x.r.val), x.r.cmp || ""] : null).filter(Boolean)]); };
+function staleSet() {
+  const out = new Set(), memo = {};
+  const st = id => {
+    if (id in memo) return memo[id];
+    memo[id] = false;                                   /* защита от циклов */
+    const c = cfg[id], n = byId[id];
+    let v = !(id in SH.map) || (SH.sig && SH.sig[id] !== ruleSig(id));
+    const base = c.from && byId[c.from] && c.from !== id ? c.from : n.p;
+    if (!v && base) v = st(base);
+    if (!v) v = (c.sub || []).some(x => byId[x] && x !== id && st(x));
+    return memo[id] = v;
+  };
+  N.forEach(n => { if (st(n.id)) out.add(n.id); });
+  return out;
+}
 let SHARED_META = null, SHARED_VER = null, sharedEtag = null, sharedBusy = false, sharedNotified = null, sharedTimer = null;
 async function gzipBytes(u8) { return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer()); }
 async function gunzipBytes(u8) { return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer()); }
@@ -1726,10 +1745,12 @@ function sharedRecalc() {
   const n = DATA.shared.n, vis = visibleRows(), mask = new Uint8Array(n);
   for (const i of vis) mask[i] = 1;
   RES = {}; OWN = {};
+  STALE = staleSet();
   const memo = new Map();
   const setOf = id => { let x = id; while (x && byId[x]) { if (SH.sets[x]) return SH.sets[x]; x = byId[x].p; } return null; };
   N.forEach(nd => {
     OWN[nd.id] = SH.own[nd.id] || 0;
+    if (STALE.has(nd.id)) { RES[nd.id] = []; return; }
     const bits = setOf(nd.id);
     if (!bits) { RES[nd.id] = []; return; }
     if (!memo.has(bits)) { const out = []; for (let i = 0; i < n; i++) if (mask[i] && (bits[i >> 3] & (1 << (i & 7)))) out.push(i); memo.set(bits, out); }
@@ -1754,7 +1775,8 @@ function buildShared() {
     if (own[nd.id]) owns[nd.id] = own[nd.id];
   });
   const ver = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-  return { v: 1, ver, at: new Date().toISOString(), file: DATA.file, sheet: DATA.sheet || "", n, ids, amt, dd, own: owns, map, sets };
+  const sig = Object.fromEntries(N.map(nd => [nd.id, ruleSig(nd.id)]));
+  return { v: 1, ver, at: new Date().toISOString(), file: DATA.file, sheet: DATA.sheet || "", n, ids, amt, dd, own: owns, map, sets, sig };
 }
 async function repoShas() {
   const r = await fetch(API.replace(/\/$/, "") + "?ref=" + BR + "&_=" + Date.now(), { headers: ghHeaders(), cache: "no-store" });
@@ -1835,15 +1857,27 @@ function applyShared(j) {
     rows[i] = r;
   }
   const dec = {}; Object.entries(j.sets).forEach(([k, v]) => { dec[k] = unb64(v); });
-  SH = { sets: {}, own: j.own || {} };
+  SH = { sets: {}, own: j.own || {}, map: j.map || {}, sig: j.sig || null };
   Object.entries(j.map).forEach(([id, k]) => { SH.sets[id] = dec[k]; });
   DATA = { file: j.file, shared: { ver: j.ver, at: j.at, n }, cols, rows, sheet: j.sheet || "", sheets: [] };
   previewCache = {}; buildCaches(); SHARED_VER = j.ver; sharedNotified = j.ver;
   $("#sheetSel").hidden = true;
   recalc();
-  setInfo(["Общие данные: ", el("b", null, j.file), " · опубликованы " + fmtWhen(j.at) + " · " + nf.format(n) + " строк. Числа посчитаны по правилам на момент публикации."]);
+  sharedInfo();
   $("#allBtn").disabled = false; $("#idsBtn").disabled = false; $("#allMode").disabled = false;
   if (sel) select(sel);
+}
+function sharedInfo() {
+  if (!DATA || !DATA.shared) return;
+  const parts = ["Общие данные: ", el("b", null, DATA.file), " · опубликованы " + fmtWhen(DATA.shared.at) + " · " + nf.format(DATA.shared.n) + " строк. Числа посчитаны по правилам на момент публикации."];
+  const own = N.filter(n => STALE.has(n.id) && !(STALE.has(n.p) && !cfg[n.id].from)).map(n => n.t);
+  if (STALE.size) {
+    const w = el("span", "colwarn");
+    w.appendChild(el("b", null, "Не посчитаны блоки (" + STALE.size + "), созданные или изменённые после публикации: "));
+    w.appendChild(document.createTextNode(own.join(", ") + ". Чтобы увидеть по ним числа, загрузите выгрузку и снова нажмите «Опубликовать для всех»."));
+    parts.push(w);
+  }
+  setInfo(parts);
 }
 function paintSharedBtns() {
   const pub = $("#pubBtn"), sh = $("#sharedBtn"); if (!pub || !sh) return;
@@ -1944,6 +1978,11 @@ function dataBlock(id) {
 function updatePanelData() {
   const num = $("#tileNum"); if (!num || !sel) return;
   const id = sel, rows = RES[id].length, total = RES.root.length;
+  if (DATA.shared && STALE.has(id)) {
+    num.textContent = "?";
+    $("#tileSub").textContent = "Блок создан или его правила изменены после публикации общих данных (" + fmtWhen(DATA.shared.at) + "), поэтому числа по нему нет. Загрузите выгрузку и снова нажмите «Опубликовать для всех».";
+    $("#dlBlock").disabled = true; $("#prev").replaceChildren(); return;
+  }
   const nd = byId[id].p && !OWN[id];
   num.textContent = nd ? "—" : nf.format(rows);
   const pct = total ? (rows / total * 100) : 0;
