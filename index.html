@@ -73,8 +73,8 @@ button { font: inherit; color: inherit; }
 
 .main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
 .board { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
-#viewport { overflow: auto; max-height: 78vh; padding: 12px; }
-#sizer { position: relative; margin: 0 auto; overflow: hidden; }
+#viewport { overflow: auto; height: 78vh; min-height: 420px; padding: 12px; }
+#sizer { position: relative; overflow: hidden; }
 #sizer:has(.dragging) { overflow: visible; }
 #stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 #edges { position: absolute; left: 0; top: 0; overflow: visible; }
@@ -128,7 +128,7 @@ ul.crit li.q::before { background: var(--warn); border-radius: 50%; }
 @media (max-width: 1020px) {
   .main { grid-template-columns: minmax(0, 1fr); }
   aside { position: static; max-height: none; }
-  #viewport { max-height: 62vh; }
+  #viewport { height: 62vh; min-height: 320px; }
 }
 @media (prefers-reduced-motion: reduce) { .node { transition: none; } }
 
@@ -266,7 +266,8 @@ body { margin: 0; }
 
 <script>
 
-let W = 1120, H = 830, scale = 1, OX = 0, EW = 1120; const NH = 48, W0 = 1120, H0 = 830;
+let W = 1120, H = 830, scale = 1, OX = 0, OY = 0, EW = 1120;
+let BB = { x1: 0, x2: 1120, y1: 0, y2: 830 };       /* границы схемы (блоки + линии) в координатах сцены */ const NH = 48, W0 = 1120, H0 = 830;
 /* c: критерии из документа, q: открытые вопросы, n: примечание, d: пояснение к блоку */
 const N = [
  {id:"root", t:"Все должники", x:560, y:0, w:190, k:"root", d:"Вся база. Воронка делит должников по статусу, наличию судебного акта и этапу правопреемства."},
@@ -614,39 +615,72 @@ function syncNodeEls() {
 function placeNodeEls() {
   N.forEach(n => { const b = nodeEls[n.id]; if (!b) return; b.style.left = (n.x - n.w / 2) + "px"; b.style.top = n.y + "px"; b.style.width = n.w + "px"; });
 }
-function relayout() {
+function relayout(keepView) {
+  if (keepView === undefined) keepView = !!editing;      /* в режиме правки схема не прыгает к центру */
   placeAll(); syncNodeEls(); drawEdges();
   const moved = N.filter(n => cfg[n.id] && cfg[n.id].pos).length;
   const rp = $("#resetPos");
   if (rp) { rp.hidden = !moved; rp.textContent = "Вернуть блоки на места (" + moved + ")"; }
   stage.style.width = W + "px"; stage.style.height = H + "px";
-  const sx = vp ? vp.scrollLeft : 0, sy = vp ? vp.scrollTop : 0;
-  if (manual) apply(scale); else fit();
-  if (vp) { vp.scrollLeft = sx; vp.scrollTop = sy; }
+  if (keepView) apply(scale, false);                  /* масштаб не трогаем: вернуть всё в экран — кнопка «По ширине» */
+  else {
+    const sx = vp ? vp.scrollLeft : 0, sy = vp ? vp.scrollTop : 0;
+    if (manual) apply(scale, true); else fit();
+    if (vp) { vp.scrollLeft = sx; vp.scrollTop = sy; }
+  }
   N.forEach(n => { if (cfg[n.id]) refreshNode(n.id); });
   refreshStats();
 }
 let drag = null;
 /* Блок начинает двигаться только после осознанного перетаскивания: дрожание руки при обычном
    клике (меньше DRAG_MIN пикселей) блок не сдвигает и ничего не сохраняет. */
+/* координаты указателя в системе сцены — не зависят от прокрутки и сдвига холста */
+function stagePt(cx, cy) { const r = stage.getBoundingClientRect(), k = scale || 1; return [(cx - r.left) / k, (cy - r.top) / k]; }
 function startDrag(e, n, b) {
   if (!editing || e.button !== 0) return;
-  drag = { n, b, id: e.pointerId, sx: e.clientX, sy: e.clientY, x0: n.x, y0: n.y, on: false,
+  const p = stagePt(e.clientX, e.clientY);
+  drag = { n, b, id: e.pointerId, sx: e.clientX, sy: e.clientY, x0: n.x, y0: n.y, gx: n.x - p[0], gy: n.y - p[1], cx: e.clientX, cy: e.clientY, on: false, raf: 0,
            lim: e.pointerType === "touch" ? 24 : 12 };
 }
-function endDrag() { if (drag) { stage.classList.remove("dragging"); drag = null; } }
+function endDrag() { if (drag) { cancelAnimationFrame(drag.raf); stage.classList.remove("dragging"); drag = null; } }
+function dragMoveTo(cx, cy) {
+  const p = stagePt(cx, cy);
+  const nx = Math.round((p[0] + drag.gx) / 10) * 10, ny = Math.round((p[1] + drag.gy) / 10) * 10;
+  if (nx === drag.n.x && ny === drag.n.y) return;
+  drag.n.x = nx; drag.n.y = ny;
+  placeNodeEls(); drawEdges(); apply(scale, false);
+}
+/* у края поля прокручиваем его сами, пока блок тянут */
+function dragAutoScroll(t) {
+  if (!drag || !drag.on) return;
+  const dt = Math.min(50, drag.t ? t - drag.t : 16); drag.t = t;
+  /* скорость растёт к краю: до ~700 пикселей в секунду */
+  /* край поля, но не дальше края окна: если поле не влезает в экран, крутим у края окна */
+  const b0 = vp.getBoundingClientRect(), r = { left: Math.max(b0.left, 0), right: Math.min(b0.right, innerWidth), top: Math.max(b0.top, 0), bottom: Math.min(b0.bottom, innerHeight) };
+  const z = 40, sp = d => Math.max(1, Math.round((z - Math.max(0, d)) / z * 0.7 * dt));
+  let dx = 0, dy = 0;
+  if (drag.cx < r.left + z) dx = -sp(drag.cx - r.left); else if (drag.cx > r.right - z) dx = sp(r.right - drag.cx);
+  if (drag.cy < r.top + z) dy = -sp(drag.cy - r.top); else if (drag.cy > r.bottom - z) dy = sp(r.bottom - drag.cy);
+  if (dx || dy) {
+    const k = scale || 1;
+    if (dx > 0 && vp.scrollLeft + vp.clientWidth >= vp.scrollWidth - 1) sizer.style.width = (parseFloat(sizer.style.width) + dx) + "px";
+    if (dy > 0 && vp.scrollTop + vp.clientHeight >= vp.scrollHeight - 1) sizer.style.height = (parseFloat(sizer.style.height) + dy) + "px";
+    vp.scrollLeft += dx; vp.scrollTop += dy;
+    dragMoveTo(drag.cx, drag.cy);
+  }
+  drag.raf = requestAnimationFrame(dragAutoScroll);
+}
 addEventListener("pointermove", e => {
   if (!drag || e.pointerId !== drag.id) return;
-  const k = scale || 1;
   if (!drag.on) {
     if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < drag.lim) return;
     drag.on = true; stage.classList.add("dragging");
     try { drag.b.setPointerCapture(drag.id); } catch (err) {}
+    drag.raf = requestAnimationFrame(dragAutoScroll);
   }
   e.preventDefault();
-  drag.n.x = Math.max(drag.n.w / 2 + 10, Math.round((drag.x0 + (e.clientX - drag.sx) / k) / 10) * 10);
-  drag.n.y = Math.max(0, Math.round((drag.y0 + (e.clientY - drag.sy) / k) / 10) * 10);
-  placeNodeEls(); drawEdges();
+  drag.cx = e.clientX; drag.cy = e.clientY;
+  dragMoveTo(e.clientX, e.clientY);
 });
 addEventListener("pointercancel", endDrag);
 addEventListener("pointerup", e => {
@@ -657,7 +691,7 @@ addEventListener("pointerup", e => {
   d.b.dataset.drag = "1";
   cfg[d.n.id].pos = { x: d.n.x, y: d.n.y };
   if (typeof dirty !== "undefined") dirty.add(d.n.id);
-  relayout(); saveSoon();
+  relayout(true); saveSoon();
   setStatus("Блок передвинут. Вернуть все блоки на места — кнопка вверху", 6000);
 });
 function refreshNode(id) {
@@ -789,11 +823,11 @@ function drawEdges() {
   svg.setAttribute("viewBox", "0 0 " + W + " " + H);
   /* линии обхода могут уйти левее нуля или правее W: запоминаем запас, чтобы схема не обрезалась */
   /* границы самой схемы (блоки + линии): по ним поле центрируется в окне */
-  let mn = Infinity, mx = -Infinity;
-  N.forEach(n => { mn = Math.min(mn, n.x - n.w / 2); mx = Math.max(mx, n.x + n.w / 2); });
-  svg.querySelectorAll("path").forEach(pa => { try { const bb = pa.getBBox(); if (bb.width || bb.height) { mn = Math.min(mn, bb.x); mx = Math.max(mx, bb.x + bb.width); } } catch (e) {} });
-  if (!isFinite(mn)) { mn = 0; mx = W; }
-  OX = Math.round(12 - mn);
+  let mn = Infinity, mx = -Infinity, my = Infinity, My = -Infinity;
+  N.forEach(n => { mn = Math.min(mn, n.x - n.w / 2); mx = Math.max(mx, n.x + n.w / 2); my = Math.min(my, n.y); My = Math.max(My, n.y + NH + 16); });
+  svg.querySelectorAll("path").forEach(pa => { try { const bb = pa.getBBox(); if (bb.width || bb.height) { mn = Math.min(mn, bb.x); mx = Math.max(mx, bb.x + bb.width); my = Math.min(my, bb.y); My = Math.max(My, bb.y + bb.height); } } catch (e) {} });
+  if (!isFinite(mn)) { mn = 0; mx = W; my = 0; My = H; }
+  BB = { x1: mn, x2: mx, y1: my, y2: My };
   EW = Math.ceil(mx - mn + 24);
 }
 placeAll(); syncNodeEls(); drawEdges();
@@ -2226,16 +2260,38 @@ $("#openBtn").addEventListener("click", e => {
 });
 
 let manual = false;
-function apply(s) {
-  scale = Math.min(1.6, Math.max(0.4, s));
-  stage.style.transform = "scale(" + scale + ")";
-  sizer.style.width = EW * scale + "px"; sizer.style.height = H * scale + "px";
+/* Поле — холст не меньше видимой области: блок можно перетащить в любое его место.
+   recenter: схема ставится по центру по ширине и к верху (загрузка, «По ширине», смена масштаба).
+   Без recenter схема остаётся на месте, а холст при необходимости растёт: влево и вверх —
+   со сдвигом прокрутки, чтобы на экране ничего не прыгало. */
+const PADC = 12;
+function apply(s, recenter) {
+  const ns = Math.min(1.6, Math.max(0.4, s));
+  if (ns !== scale) recenter = true;
+  scale = ns;
+  const k = scale, vw = Math.max(0, vp.clientWidth - 24) / k, vh = Math.max(0, vp.clientHeight - 24) / k;
+  const cw = BB.x2 - BB.x1, ch = BB.y2 - BB.y1;
+  let dx = 0, dy = 0;
+  if (recenter) {
+    OX = Math.round(Math.max(PADC, (vw - cw) / 2) - BB.x1);
+    OY = Math.round(PADC - BB.y1);
+  } else {
+    if (BB.x1 + OX < PADC) { dx = Math.ceil(PADC - BB.x1 - OX); OX += dx; }
+    if (BB.y1 + OY < PADC) { dy = Math.ceil(PADC - BB.y1 - OY); OY += dy; }
+  }
+  const CW = Math.max(vw, BB.x2 + OX + PADC, (parseFloat(sizer.style.width) || 0) / k * (recenter ? 0 : 1) + dx);
+  const CH = Math.max(vh, BB.y2 + OY + PADC, (parseFloat(sizer.style.height) || 0) / k * (recenter ? 0 : 1) + dy);
+  stage.style.transform = "scale(" + k + ")";
+  sizer.style.width = Math.ceil(CW * k) + "px"; sizer.style.height = Math.ceil(CH * k) + "px";
   stage.style.width = W + "px"; stage.style.height = H + "px";
-  stage.style.left = OX * scale + "px";
+  stage.style.left = OX * k + "px"; stage.style.top = OY * k + "px";
+  if (dx) vp.scrollLeft += dx * k;
+  if (dy) vp.scrollTop += dy * k;
 }
-function fit() { manual = false; apply(Math.max(0.55, Math.min(1, (vp.clientWidth - 24) / EW))); vp.scrollLeft = 0; }
-$("#zIn").addEventListener("click", () => { manual = true; apply(scale + 0.1); });
-$("#zOut").addEventListener("click", () => { manual = true; apply(scale - 0.1); });
+const fitScale = () => Math.max(0.55, Math.min(1, (vp.clientWidth - 24) / EW));
+function fit() { manual = false; apply(fitScale(), true); vp.scrollLeft = 0; vp.scrollTop = 0; }
+$("#zIn").addEventListener("click", () => { manual = true; apply(scale + 0.1, true); });
+$("#zOut").addEventListener("click", () => { manual = true; apply(scale - 0.1, true); });
 $("#zFit").addEventListener("click", fit);
 addEventListener("resize", () => { if (!manual) fit(); });
 
