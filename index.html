@@ -311,6 +311,9 @@ const N = [
 const KIND = {root:"Исходная группа", group:"Сегмент", stage:"Этап", result:"Исход суда", final:"Дальнейшее действие"};
 const byId = Object.fromEntries(N.map(n => { n.k = n.k || "stage"; n.c = n.c || []; n.q = n.q || []; n.t0 = n.t; n.x0 = n.x; n.y0 = n.y; return [n.id, n]; }));
 const kids = id => N.filter(n => n.p === id);
+/* дополнительные стрелки: только рисуются, на подсчёт не влияют */
+const linksOf = id => ((cfg[id] && cfg[id].links) || []).filter(x => byId[x] && x !== id && x !== byId[id].p);
+const linkedFrom = id => N.filter(n => n.p !== id && linksOf(n.id).includes(id));
 const pathTo = id => { const r = []; for (let n = byId[id]; n; n = byId[n.p]) r.unshift(n); return r; };
 const $ = s => document.querySelector(s);
 const stage = $("#stage"), svg = $("#edges"), panel = $("#panel"), vp = $("#viewport"), sizer = $("#sizer");
@@ -352,7 +355,7 @@ function placeAll() {
 }
 const defCfg = n => {
   const d = DEFTBL[n.id] || { rows: n.c.map(t => ({ t, r: null })) };
-  return { c: d.rows.map(x => ({ t: x.t, r: x.r ? Object.assign({}, x.r) : null })), q: n.q.slice(), n: n.n || "", l: d.l || "", from: d.from || "", sub: (d.sub || []).slice(), name: "", pos: null };
+  return { c: d.rows.map(x => ({ t: x.t, r: x.r ? Object.assign({}, x.r) : null })), q: n.q.slice(), n: n.n || "", l: d.l || "", from: d.from || "", sub: (d.sub || []).slice(), name: "", pos: null, links: [] };
 };
 const cfg = Object.fromEntries(N.map(n => [n.id, defCfg(n)]));
 cfg.__v = 2;
@@ -412,9 +415,10 @@ function applySaved(obj) {
         c: Array.isArray(s.c) ? s.c.map(x => ({ t: String(x.t || ""), r: x.r && x.r.col ? x.r : null })) : d.c, q, n: nt,
         l: s.l === "or" ? "or" : "", from: typeof s.from === "string" ? s.from : "", sub: Array.isArray(s.sub) ? s.sub.map(String) : [], name: typeof s.name === "string" ? s.name : "",
         pos: s.pos && typeof s.pos.x === "number" && typeof s.pos.y === "number" ? { x: s.pos.x, y: s.pos.y } : null,
-        txt: Array.isArray(s.txt) ? s.txt.map(String) : null, uname: typeof s.uname === "string" ? s.uname : ""
+        txt: Array.isArray(s.txt) ? s.txt.map(String) : null, uname: typeof s.uname === "string" ? s.uname : "",
+        links: Array.isArray(s.links) ? s.links.map(String) : []
       };
-    } else cfg[n.id] = Object.assign({}, d, { q, n: nt, pos: s.pos && typeof s.pos.x === "number" ? { x: s.pos.x, y: s.pos.y } : null });
+    } else cfg[n.id] = Object.assign({}, d, { q, n: nt, pos: s.pos && typeof s.pos.x === "number" ? { x: s.pos.x, y: s.pos.y } : null, links: [] });
     n.t = cfg[n.id].uname || cfg[n.id].name || n.t0;
   });
   relayout();
@@ -776,6 +780,7 @@ function drawEdges() {
   Object.values(edgeEls).forEach(p => p.remove());
   Object.keys(edgeEls).forEach(k => delete edgeEls[k]);
   N.forEach(n => { if (n.p && byId[n.p]) edgeEls[n.id] = mkPath(edgeD(byId[n.p], n)); });
+  N.forEach(n => linksOf(n.id).forEach(src => { edgeEls["x:" + src + ">" + n.id] = mkPath(edgeD(byId[src], n), "extra"); }));
   const rd = retD();
   if (rd) { if (!retPath) retPath = mkPath(rd, "ret", "url(#arOn)"); else { retPath.setAttribute("d", rd); svg.appendChild(retPath); } }
   else if (retPath) { retPath.remove(); retPath = null; }
@@ -1409,10 +1414,10 @@ const OPCAP = { filled: "заполнено", empty: "пусто", eq: "равн
 function rulesRows() {
   const out = [];
   N.forEach(n => {
-    const c = cfg[n.id], head = [n.id, n.t, "", "", "", "", "", c.l === "or" ? "ИЛИ" : "", c.from || "", (c.sub || []).join("; "), n.p || "", KIND[n.k] || ""];
+    const c = cfg[n.id], head = [n.id, n.t, "", "", "", "", "", c.l === "or" ? "ИЛИ" : "", c.from || "", (c.sub || []).join("; "), n.p || "", KIND[n.k] || "", linksOf(n.id).join("; ")];
     if (!c.c.length) { out.push(head); return; }
     c.c.forEach((x, i) => {
-      const r = x.r, row = i === 0 ? head.slice() : [n.id, n.t, "", "", "", "", "", "", "", "", "", ""];
+      const r = x.r, row = i === 0 ? head.slice() : [n.id, n.t, "", "", "", "", "", "", "", "", "", "", ""];
       row[2] = x.t || "";
       if (r) { row[3] = r.col || ""; row[4] = OPCAP[r.op] || ""; row[5] = r.val || ""; row[6] = r.cmp || ""; }
       out.push(row);
@@ -1496,7 +1501,7 @@ async function downloadRules() {
     const out = [];
     for (const nm of names) {
       let data = await entryBytes(tpl, ents[nm]);
-      if (nm === pr) data = enc.encode(putRows(utf8.decode(data), rulesRows(), "L"));
+      if (nm === pr) data = enc.encode(putRows(utf8.decode(data), rulesRows(), "M"));
       else if (nm === bl) data = enc.encode(putRows(utf8.decode(data), blockRows(), "E"));
       else if (nm === kl) data = enc.encode(putRows(utf8.decode(data), colList, "A"));
       else if (nm === "xl/workbook.xml") data = enc.encode(utf8.decode(data).replace(/('Колонки'!\$A\$2:\$A\$)\d+/, "$1" + (colList.length + 1)));
@@ -1526,14 +1531,14 @@ function parseRulesTable(wb) {
   if (hi < 0) throw new Error("не найден столбец «Код блока»");
   const head = arr[hi].map(v => cellS(v).toLowerCase());
   const ix = nm => head.findIndex(h => h.startsWith(nm.toLowerCase()));
-  const I = { code: ix("Код блока"), name: ix("Блок"), desc: ix("Критерий"), col: ix("Колонка"), op: ix("Условие"), val: ix("Значение"), cmp: ix("Сравнить"), logic: ix("Логика"), from: ix("Брать из"), sub: ix("Вычесть"), parent: ix("Родител"), kind: ix("Тип") };
+  const I = { code: ix("Код блока"), name: ix("Блок"), desc: ix("Критерий"), col: ix("Колонка"), op: ix("Условие"), val: ix("Значение"), cmp: ix("Сравнить"), logic: ix("Логика"), from: ix("Брать из"), sub: ix("Вычесть"), parent: ix("Родител"), kind: ix("Тип"), links: ix("Доп. стрелки") };
   ["code", "col", "op"].forEach(k => { if (I[k] < 0) throw new Error("не найден нужный столбец таблицы"); });
   const g = (r, k) => I[k] < 0 ? "" : cellS(r[I[k]]);
   const blocks = {}, warns = [];
   for (let li = hi + 1; li < arr.length; li++) {
     const r = arr[li], code = g(r, "code"); if (!code) continue;
-    const b = blocks[code] = blocks[code] || { rows: [], name: "", logic: "", from: "", sub: "", parent: "", kind: "" };
-    ["name", "logic", "from", "sub", "parent", "kind"].forEach(k => { if (!b[k]) b[k] = g(r, k); });
+    const b = blocks[code] = blocks[code] || { rows: [], name: "", logic: "", from: "", sub: "", parent: "", kind: "", links: "" };
+    ["name", "logic", "from", "sub", "parent", "kind", "links"].forEach(k => { if (!b[k]) b[k] = g(r, k); });
     if (!byId[code] && !b.parent) { warns.push("строка " + (li + 1) + ": новый блок «" + code + "» без столбца «Родитель (код)» — пропущен"); delete blocks[code]; continue; }
     const col = g(r, "col"), opl = g(r, "op").toLowerCase(), val = g(r, "val"), cmp = g(r, "cmp");
     let desc = g(r, "desc"), rule = null;
@@ -1565,6 +1570,8 @@ function parseRulesTable(wb) {
     if (byId[code] && byId[code].custom && KINDMAP(b.kind)) byId[code].k = KINDMAP(b.kind);
     if (b.from && !byId[b.from]) { warns.push(code + ": «Брать из блока» — нет блока «" + b.from + "»"); b.from = ""; }
     b.sub = b.sub ? b.sub.split(/[;,]/).map(x => x.trim()).filter(Boolean).filter(x => { if (byId[x] && x !== code) return true; warns.push(code + ": «Вычесть блоки» — нет блока «" + x + "»"); return false; }) : [];
+    /* столбца нет в старой таблице — стрелки остаются прежними */
+    b.links = I.links < 0 ? null : (b.links ? b.links.split(/[;,]/).map(x => x.trim()).filter(Boolean).filter(x => { if (byId[x] && x !== code) return true; warns.push(code + ": «Доп. стрелки» — нет блока «" + x + "»"); return false; }) : []);
   });
   const missing = N.filter(n => !blocks[n.id]).map(n => n.id);
   return { blocks, warns, missing, made };
@@ -1577,7 +1584,7 @@ async function loadRulesFile(file) {
     const { blocks, warns, missing, made } = parseRulesTable(wb);
     Object.entries(blocks).forEach(([code, b]) => {
       const n = byId[code], d = cfg[code], nm = b.name && b.name !== n.t0 ? b.name : "";
-      cfg[code] = { c: b.rows, q: d.q, n: d.n, l: /или/i.test(b.logic) ? "or" : "", from: b.from, sub: b.sub, name: nm, txt: d.txt || null, uname: d.uname || "", pos: d.pos || null };
+      cfg[code] = { c: b.rows, q: d.q, n: d.n, l: /или/i.test(b.logic) ? "or" : "", from: b.from, sub: b.sub, name: nm, txt: d.txt || null, uname: d.uname || "", pos: d.pos || null, links: b.links || d.links || [] };
       n.t = cfg[code].uname || nm || n.t0;
     });
     cfg.__v = 2;
@@ -1949,7 +1956,7 @@ function select(id) {
   sel = id;
   const ids = new Set(pathTo(id).map(n => n.id));
   Object.entries(nodeEls).forEach(([k, e]) => { e.classList.toggle("sel", k === id); e.classList.toggle("inpath", ids.has(k) && k !== id); });
-  Object.entries(edgeEls).forEach(([k, e]) => { const on = ids.has(k); e.classList.toggle("on", on); e.setAttribute("marker-end", on ? "url(#arOn)" : "url(#ar)"); });
+  Object.entries(edgeEls).forEach(([k, e]) => { const on = k.startsWith("x:") ? k.split(">")[1] === id : ids.has(k); e.classList.toggle("on", on); e.setAttribute("marker-end", on ? "url(#arOn)" : "url(#ar)"); });
   renderPanel();
 }
 function section(title, node, right) {
@@ -2052,12 +2059,13 @@ function renderView(n, c, path) {
   if (c.from && byId[c.from]) meta.push("Берётся из блока «" + byId[c.from].t + "» (" + c.from + ")");
   if (c.sub && c.sub.length) meta.push("Минус блоки: " + c.sub.map(x => (byId[x] ? byId[x].t : x) + " (" + x + ")").join("; "));
   if (c.l === "or" && c.c.length > 1) meta.push("Критерии связаны через ИЛИ");
+  if (linksOf(n.id).length) { const base = c.from && byId[c.from] ? byId[c.from] : byId[n.p]; meta.push("Стрелки также от: " + linksOf(n.id).map(x => byId[x].t + " (" + x + ")").join("; ") + ". Это только на схеме: должники в блок отбираются из «" + (base ? base.t : "—") + "»."); }
   const bw = el("div"); bw.appendChild(body);
   meta.forEach(t => bw.appendChild(el("p", "hint", t)));
   panel.appendChild(section("Критерии блока", bw, edit));
   if (c.q.length) { const ul = el("ul", "crit"); c.q.forEach(t => ul.appendChild(el("li", "q", t))); panel.appendChild(section("Открытые вопросы", ul)); }
   if (c.n) panel.appendChild(el("p", "note", c.n));
-  const ks = kids(n.id);
+  const ks = kids(n.id).concat(linkedFrom(n.id));
   if (ks.length) {
     const box = el("div", "next");
     ks.forEach(k => { const b = el("button", null, k.t.replace(/\s*\(.*\)$/, "")); b.type = "button"; b.addEventListener("click", () => select(k.id)); box.appendChild(b); });
@@ -2147,6 +2155,25 @@ function renderEditor(n, c) {
   }
   panel.appendChild(section("Критерии блока", cbox));
 
+  const lbox = el("div", "ed");
+  const drawL = () => {
+    lbox.replaceChildren();
+    if (!c.links) c.links = [];
+    c.links = c.links.filter(x => byId[x] && x !== n.id && x !== n.p);
+    c.links.forEach((x, k) => {
+      const line = el("div", "line"); line.style.marginBottom = "6px";
+      line.appendChild(el("span", null, byId[x].t + " (" + x + ")"));
+      line.appendChild(mini("Убрать", () => { c.links.splice(k, 1); drawL(); changed(); drawEdges(); select(sel); }, "danger"));
+      lbox.appendChild(line);
+    });
+    const opts = N.filter(x => x.id !== n.id && x.id !== n.p && !c.links.includes(x.id)).map(x => [x.id, x.t + " (" + x.id + ")"]);
+    const add = selectEl([["", "+ Добавить стрелку от блока…"]].concat(opts), "", "Добавить стрелку от блока");
+    add.addEventListener("change", () => { if (!add.value) return; c.links.push(add.value); drawL(); changed(); drawEdges(); select(sel); });
+    lbox.appendChild(add);
+    lbox.appendChild(el("p", "hint", "Стрелка от родителя «" + (byId[n.p] ? byId[n.p].t : "—") + "» есть всегда. Дополнительные стрелки только рисуются на схеме и на подсчёт не влияют."));
+  };
+  drawL();
+  panel.appendChild(section("Дополнительные стрелки на схеме", lbox));
 
   const qbox = el("div", "ed"), qwrap = el("div");
   const drawQ = () => {
@@ -2176,6 +2203,7 @@ function renderEditor(n, c) {
     if (kids(n.id).length) { setStatus("Сначала перенесите или удалите вложенные блоки", 5000); return; }
     const id = n.id;
     N.splice(N.indexOf(n), 1); delete byId[id]; delete cfg[id];
+    N.forEach(x => { const c2 = cfg[x.id]; if (c2 && c2.links && c2.links.includes(id)) c2.links = c2.links.filter(y => y !== id); });
     if (nodeEls[id]) { nodeEls[id].remove(); delete nodeEls[id]; }
     syncNodeList(); if (typeof dirty !== "undefined") N.forEach(x => dirty.add(x.id));
     editing = false; sel = "dead"; relayout(); store.save(); renderPanel();
