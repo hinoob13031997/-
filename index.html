@@ -108,6 +108,7 @@ aside { background: var(--surface); border: 1px solid var(--line); border-radius
 .crumbs button { background: none; border: 0; padding: 0; cursor: pointer; color: var(--accent); text-align: left; }
 .crumbs button:hover { text-decoration: underline; }
 .crumbs span { color: var(--muted); }
+.warn-note { font-size: 12.5px; color: #b4540a; margin: 6px 0 0; }
 .kind .kcode { text-transform: none; color: var(--accent); font-weight: 600; letter-spacing: 0; }
 .kind { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; }
 aside h2 { margin: 2px 0 0; font-size: 19px; line-height: 1.25; text-wrap: balance; }
@@ -327,9 +328,23 @@ const N = [
 ];
 const KIND = {root:"Исходная группа", group:"Сегмент", stage:"Этап", result:"Исход суда", final:"Дальнейшее действие"};
 const byId = Object.fromEntries(N.map(n => { n.k = n.k || "stage"; n.c = n.c || []; n.q = n.q || []; n.t0 = n.t; n.x0 = n.x; n.y0 = n.y; n.p0 = n.p || ""; return [n.id, n]; }));
-const kids = id => N.filter(n => n.p === id);
+/* У блока может быть несколько родителей: основной n.p (путь, раскладка) и дополнительные cfg[id].ps.
+   Все рисуются сплошной стрелкой, и блок отбирает должников из их объединения (если не задано «Брать из блока»). */
+const splitCodes = v => String(v == null ? "" : v).split(/[;,]/).map(x => x.trim()).filter(Boolean);
+const psOf = id => { const n = byId[id], c = cfg[id]; return (c && Array.isArray(c.ps) ? c.ps : []).filter((x, i, a) => byId[x] && x !== id && x !== n.p && a.indexOf(x) === i); };
+const parentsOf = id => { const n = byId[id]; return n && n.p && byId[n.p] ? [n.p].concat(psOf(id)) : []; };
+/* «Брать из блока», указывающий на свой же вложенный блок, дал бы круг (блок считался бы от самого себя) — такие коды не учитываем */
+const fromRaw = id => splitCodes(cfg[id] && cfg[id].from).filter((x, i, a) => byId[x] && x !== id && a.indexOf(x) === i);
+const fromBad = id => fromRaw(id).filter(x => isUnder(x, id));
+const fromOf = id => fromRaw(id).filter(x => !isUnder(x, id));
+const basesOf = id => { const f = fromOf(id); return f.length ? f : parentsOf(id); };
+const kids = id => N.filter(n => n.p === id || psOf(n.id).includes(id));
 /* id — потомок anc (или он сам)? Защита от циклов при смене родителя */
-const isUnder = (id, anc) => { for (let x = id, k = 0; x && k < 500; x = byId[x] ? byId[x].p : "", k++) if (x === anc) return true; return false; };
+const isUnder = (id, anc) => {                     /* anc достижим вверх от id по любым родителям */
+  const seen = new Set(), st = [id];
+  while (st.length) { const x = st.pop(); if (x === anc) return true; if (seen.has(x) || !byId[x]) continue; seen.add(x); parentsOf(x).forEach(y => st.push(y)); }
+  return false;
+};
 /* Родителя можно менять у любого блока, кроме корня. У блоков исходной схемы смена хранится в cfg.__par,
    у добавленных — в cfg.__nodes. Возвращает текст ошибки или "" */
 function parentError(id, p) {
@@ -339,9 +354,21 @@ function parentError(id, p) {
   if (isUnder(p, id)) return "«" + byId[p].t + "» находится ниже этого блока — получился бы круг";
   return "";
 }
+/* list: основной родитель первым, затем дополнительные */
+function setParents(id, list) {
+  list = list.filter((x, i, a) => a.indexOf(x) === i);
+  if (!list.length) return "нужен хотя бы один родитель";
+  for (const p of list) { const err = parentError(id, p); if (err) return err; }
+  const c = cfg[id];
+  const err = setParent(id, list[0]); if (err) return err;
+  c.ps = list.slice(1);
+  if (c.links) c.links = c.links.filter(x => !list.includes(x));
+  return "";
+}
 function setParent(id, p) {
   const err = parentError(id, p); if (err) return err;
   const n = byId[id]; n.p = p;
+  if (cfg[id] && Array.isArray(cfg[id].ps)) cfg[id].ps = cfg[id].ps.filter(x => x !== p);
   if (n.custom) syncNodeList();
   else { cfg.__par = cfg.__par || {}; if (p === n.p0) delete cfg.__par[id]; else cfg.__par[id] = p; }
   if (cfg[id] && cfg[id].links) cfg[id].links = cfg[id].links.filter(x => x !== p);
@@ -357,12 +384,12 @@ function applyParents(map) {
   });
 }
 /* дополнительные стрелки: только рисуются, на подсчёт не влияют */
-const linksOf = id => ((cfg[id] && cfg[id].links) || []).filter(x => byId[x] && x !== id && x !== byId[id].p);
+const linksOf = id => ((cfg[id] && cfg[id].links) || []).filter(x => byId[x] && x !== id && !parentsOf(id).includes(x));
 /* пунктирные стрелки «возврат в ветку»: тоже только рисунок. По умолчанию — прежняя линия «Удовлетворено (взыскатель)» → A1 */
 const DEF_RET = { A1: ["A2o"] };
 const retsOf = id => { const c = cfg[id]; const l = c && Array.isArray(c.rets) ? c.rets : (DEF_RET[id] || []); return l.filter(x => byId[x] && x !== id); };
 const retFrom = id => N.filter(n => retsOf(n.id).includes(id));
-const linkedFrom = id => N.filter(n => n.p !== id && linksOf(n.id).includes(id));
+const linkedFrom = id => N.filter(n => !parentsOf(n.id).includes(id) && linksOf(n.id).includes(id));
 const pathTo = id => { const r = []; for (let n = byId[id]; n; n = byId[n.p]) r.unshift(n); return r; };
 const $ = s => document.querySelector(s);
 const stage = $("#stage"), svg = $("#edges"), panel = $("#panel"), vp = $("#viewport"), sizer = $("#sizer");
@@ -404,7 +431,7 @@ function placeAll() {
 }
 const defCfg = n => {
   const d = DEFTBL[n.id] || { rows: n.c.map(t => ({ t, r: null })) };
-  return { c: d.rows.map(x => ({ t: x.t, r: x.r ? Object.assign({}, x.r) : null })), q: n.q.slice(), n: n.n || "", l: d.l || "", from: d.from || "", sub: (d.sub || []).slice(), name: "", pos: null, links: [], rets: null };
+  return { c: d.rows.map(x => ({ t: x.t, r: x.r ? Object.assign({}, x.r) : null })), q: n.q.slice(), n: n.n || "", l: d.l || "", from: d.from || "", sub: (d.sub || []).slice(), name: "", pos: null, links: [], rets: null, ps: [] };
 };
 const cfg = Object.fromEntries(N.map(n => [n.id, defCfg(n)]));
 cfg.__v = 2;
@@ -468,11 +495,14 @@ function applySaved(obj) {
         pos: s.pos && typeof s.pos.x === "number" && typeof s.pos.y === "number" ? { x: s.pos.x, y: s.pos.y } : null,
         txt: Array.isArray(s.txt) ? s.txt.map(String) : null, uname: typeof s.uname === "string" ? s.uname : "",
         links: Array.isArray(s.links) ? s.links.map(String) : [],
-        rets: Array.isArray(s.rets) ? s.rets.map(String) : null
+        rets: Array.isArray(s.rets) ? s.rets.map(String) : null,
+        ps: Array.isArray(s.ps) ? s.ps.map(String) : []
       };
     } else cfg[n.id] = Object.assign({}, d, { q, n: nt, pos: s.pos && typeof s.pos.x === "number" ? { x: s.pos.x, y: s.pos.y } : null, links: [] });
     n.t = cfg[n.id].uname || cfg[n.id].name || n.t0;
   });
+  /* дополнительный родитель, который на самом деле ниже блока, дал бы круг — убираем */
+  N.forEach(n => { const c = cfg[n.id]; if (c && Array.isArray(c.ps) && c.ps.length) c.ps = c.ps.filter(x => { if (!byId[x] || x === n.id) return false; const keep = c.ps; c.ps = []; const bad = isUnder(x, n.id); c.ps = keep; return !bad; }); });
   relayout();
 }
 
@@ -868,6 +898,7 @@ function drawEdges() {
   Object.values(edgeEls).forEach(p => p.remove());
   Object.keys(edgeEls).forEach(k => delete edgeEls[k]);
   N.forEach(n => { if (n.p && byId[n.p]) edgeEls[n.id] = mkPath(edgeD(byId[n.p], n)); });
+  N.forEach(n => psOf(n.id).forEach(src => { edgeEls["p:" + src + ">" + n.id] = mkPath(edgeD(byId[src], n)); }));
   N.forEach(n => linksOf(n.id).forEach(src => { edgeEls["x:" + src + ">" + n.id] = mkPath(edgeD(byId[src], n), "extra"); }));
   N.forEach(n => retsOf(n.id).forEach(src => { const d = retD(byId[src], n); if (d) edgeEls["r:" + src + ">" + n.id] = mkPath(d, "ret", "url(#arOn)"); }));
   /* svg должен совпадать со сценой по размеру: иначе viewBox сжимает линии, а блоки остаются на месте */
@@ -1078,10 +1109,14 @@ function computeSets(base) {
     busy.add(id);
     const n = byId[id], c = cfg[id], t = tests[id];
     let out;
-    const baseId = c.from && byId[c.from] && c.from !== id ? c.from : n.p;
-    if (!baseId) out = base;
+    const bs = basesOf(id);
+    if (!bs.length) out = base;
     else {
-      out = calc(baseId);
+      if (bs.length === 1) out = calc(bs[0]);
+      else {                                            /* объединение нескольких баз, по возрастанию номера строки */
+        const m = new Uint8Array(nRows()); bs.forEach(b => calc(b).forEach(i => { m[i] = 1; }));
+        out = []; for (let i = 0; i < m.length; i++) if (m[i]) out.push(i);
+      }
       if (t.length) {
         const or = c.l === "or", base = out; out = [];
         for (let j = 0; j < base.length; j++) {
@@ -1329,7 +1364,7 @@ async function bigDownloadBlock(id) {
 async function bigDownloadAll() {
   const deep = $("#allMode").value === "deep";
   const ruled = N.filter(n => OWN[n.id] > 0), ptr = ruled.map(() => 0);
-  const descRuled = id => { const out = []; (function w(x) { kids(x).forEach(k => { if (OWN[k.id] > 0) out.push(k.id); w(k.id); }); })(id); return out; };
+  const descRuled = id => { const out = [], seen = new Set([id]); (function w(x) { kids(x).forEach(k => { if (seen.has(k.id)) return; seen.add(k.id); if (OWN[k.id] > 0) out.push(k.id); w(k.id); }); })(id); return out; };
   const pos = Object.fromEntries(ruled.map((n, k) => [n.id, k]));
   const D = ruled.map(n => deep ? descRuled(n.id).map(d => pos[d]) : []);
   const labels = ruled.map(n => [n.t, pathText(n.id)]);
@@ -1367,7 +1402,7 @@ function parseIdList(text) {
 }
 function finalBlockPlan() {
   const ruled = N.filter(n => OWN[n.id] > 0 || n.id === "root");
-  const descRuled = id => { const out = []; (function w(x) { kids(x).forEach(k => { if (OWN[k.id] > 0) out.push(k.id); w(k.id); }); })(id); return out; };
+  const descRuled = id => { const out = [], seen = new Set([id]); (function w(x) { kids(x).forEach(k => { if (seen.has(k.id)) return; seen.add(k.id); if (OWN[k.id] > 0) out.push(k.id); w(k.id); }); })(id); return out; };
   const pos = Object.fromEntries(ruled.map((n, k) => [n.id, k]));
   const D = ruled.map(n => descRuled(n.id).map(d => pos[d]).filter(x => x !== undefined));
   const lab = ruled.map(n => { const pt = pathTo(n.id); return [n.id, n.t, pathText(n.id), (pt[2] || { t: "" }).t]; });
@@ -1500,7 +1535,7 @@ const OPCAP = { filled: "заполнено", empty: "пусто", eq: "равн
 function rulesRows() {
   const out = [];
   N.forEach(n => {
-    const c = cfg[n.id], head = [n.id, n.t, "", "", "", "", "", c.l === "or" ? "ИЛИ" : "", c.from || "", (c.sub || []).join("; "), n.p || "", KIND[n.k] || "", linksOf(n.id).join("; "), retsOf(n.id).join("; ")];
+    const c = cfg[n.id], head = [n.id, n.t, "", "", "", "", "", c.l === "or" ? "ИЛИ" : "", c.from || "", (c.sub || []).join("; "), parentsOf(n.id).join("; "), KIND[n.k] || "", linksOf(n.id).join("; "), retsOf(n.id).join("; ")];
     if (!c.c.length) { out.push(head); return; }
     c.c.forEach((x, i) => {
       const r = x.r, row = i === 0 ? head.slice() : [n.id, n.t, "", "", "", "", "", "", "", "", "", "", "", ""];
@@ -1511,7 +1546,7 @@ function rulesRows() {
   });
   return out;
 }
-function blockRows() { return N.map(n => [n.id, n.t, n.p || "", pathText(n.id), KIND[n.k] || ""]); }
+function blockRows() { return N.map(n => [n.id, n.t, parentsOf(n.id).join("; "), pathText(n.id), KIND[n.k] || ""]); }
 const xmlEsc = t => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const colName = i => { let s = "", k = i; do { s = String.fromCharCode(65 + (k % 26)) + s; k = Math.floor(k / 26) - 1; } while (k >= 0); return s; };
 function rowsXml(rows, from) {
@@ -1613,7 +1648,8 @@ function parseRulesTable(wb) {
   const sn = wb.SheetNames.find(x => /^правила$/i.test(x.trim())) || wb.SheetNames.find(x => /правил/i.test(x) && !/как/i.test(x));
   if (!sn) throw new Error("в файле нет листа «Правила»");
   const arr = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" });
-  const par0 = Object.fromEntries(N.map(n => [n.id, n.p]));        /* родители до загрузки таблицы */
+  const par0 = Object.fromEntries(N.map(n => [n.id, parentsOf(n.id).join("; ")]));   /* родители до загрузки таблицы */
+  const sameP = (a, b) => splitCodes(a).join(";") === splitCodes(b).join(";");
   const hi = arr.findIndex(r => r.some(v => cellS(v) === "Код блока"));
   if (hi < 0) throw new Error("не найден столбец «Код блока»");
   const head = arr[hi].map(v => cellS(v).toLowerCase());
@@ -1646,15 +1682,16 @@ function parseRulesTable(wb) {
     if (byId[code]) {
       return;
     }
-    if (!byId[b.parent]) { warns.push(code + ": нет блока-родителя «" + b.parent + "», блок не создан"); delete blocks[code]; return; }
-    const n = addNode({ id: code, p: b.parent, t: b.name || code, k: KINDMAP(b.kind) || "stage", w: Math.min(260, Math.max(170, 11 * String(b.name || code).length / 2 + 40)) });
+    const p1 = splitCodes(b.parent)[0] || "";
+    if (!byId[p1]) { warns.push(code + ": нет блока-родителя «" + b.parent + "», блок не создан"); delete blocks[code]; return; }
+    const n = addNode({ id: code, p: p1, t: b.name || code, k: KINDMAP(b.kind) || "stage", w: Math.min(260, Math.max(170, 11 * String(b.name || code).length / 2 + 40)) });
     cfg[code] = defCfg(n); made.push(code);
   });
   if (made.length) cfg.__nodes = N.filter(n => n.custom).map(n => ({ id: n.id, p: n.p, t: n.t, k: n.k, w: n.w }));
   Object.entries(blocks).forEach(([code, b]) => {
-    if (byId[code] && b.parent && b.parent !== byId[code].p) { const err = setParent(code, b.parent); if (err) warns.push(code + ": родитель не изменён — " + err); }
+    if (byId[code] && b.parent && !sameP(b.parent, parentsOf(code).join(";"))) { const err = setParents(code, splitCodes(b.parent)); if (err) warns.push(code + ": родитель не изменён — " + err); }
     if (byId[code] && byId[code].custom && KINDMAP(b.kind)) byId[code].k = KINDMAP(b.kind);
-    if (b.from && !byId[b.from]) { warns.push(code + ": «Брать из блока» — нет блока «" + b.from + "»"); b.from = ""; }
+    if (b.from) b.from = splitCodes(b.from).filter(x => { if (byId[x] && x !== code) return true; warns.push(code + ": «Брать из блока» — нет блока «" + x + "»"); return false; }).join("; ");
     b.sub = b.sub ? b.sub.split(/[;,]/).map(x => x.trim()).filter(Boolean).filter(x => { if (byId[x] && x !== code) return true; warns.push(code + ": «Вычесть блоки» — нет блока «" + x + "»"); return false; }) : [];
     /* столбца нет в старой таблице — стрелки остаются прежними */
     b.rets = I.rets < 0 ? null : (b.rets ? b.rets.split(/[;,]/).map(x => x.trim()).filter(Boolean).filter(x => { if (byId[x] && x !== code) return true; warns.push(code + ": «Пунктир» — нет блока «" + x + "»"); return false; }) : []);
@@ -1669,9 +1706,9 @@ function parseRulesTable(wb) {
       const hh = ra[rh].map(v => cellS(v).toLowerCase()), ic = hh.findIndex(h => h.startsWith("код блока")), ip = hh.findIndex(h => h.startsWith("родител"));
       if (ic >= 0 && ip >= 0) ra.slice(rh + 1).forEach(r => {
         const code = cellS(r[ic]), par = cellS(r[ip]);
-        if (!code || !par || !byId[code] || par === par0[code] || par === byId[code].p) return;
-        if (blocks[code] && blocks[code].parent && blocks[code].parent !== par0[code]) { warns.push(code + ": родитель на листах «Правила» и «Блоки (справочник)» разный — взят с листа «Правила»"); return; }
-        const err = setParent(code, par);
+        if (!code || !par || !byId[code] || sameP(par, par0[code]) || sameP(par, parentsOf(code).join(";"))) return;
+        if (blocks[code] && blocks[code].parent && !sameP(blocks[code].parent, par0[code])) { warns.push(code + ": родитель на листах «Правила» и «Блоки (справочник)» разный — взят с листа «Правила»"); return; }
+        const err = setParents(code, splitCodes(par));
         warns.push(code + (err ? ": родитель не изменён — " + err : ": родитель изменён на «" + par + "» (с листа «Блоки (справочник)»)"));
       });
     }
@@ -1687,7 +1724,7 @@ async function loadRulesFile(file) {
     const { blocks, warns, missing, made } = parseRulesTable(wb);
     Object.entries(blocks).forEach(([code, b]) => {
       const n = byId[code], d = cfg[code], nm = b.name && b.name !== n.t0 ? b.name : "";
-      cfg[code] = { c: b.rows, q: d.q, n: d.n, l: /или/i.test(b.logic) ? "or" : "", from: b.from, sub: b.sub, name: nm, txt: d.txt || null, uname: d.uname || "", pos: d.pos || null, links: b.links || d.links || [], rets: b.rets || (Array.isArray(d.rets) ? d.rets : null) };
+      cfg[code] = { c: b.rows, q: d.q, n: d.n, l: /или/i.test(b.logic) ? "or" : "", from: b.from, sub: b.sub, name: nm, txt: d.txt || null, uname: d.uname || "", pos: d.pos || null, links: b.links || d.links || [], rets: b.rets || (Array.isArray(d.rets) ? d.rets : null), ps: Array.isArray(d.ps) ? d.ps : [] };
       n.t = cfg[code].uname || nm || n.t0;
     });
     cfg.__v = 2;
@@ -1805,7 +1842,7 @@ async function downloadAll() {
   const long = [["Блок", "Путь"].concat(DATA.cols)];
   let sets = null;
   if (deep) { sets = {}; ruled.forEach(n => { const s = new Uint8Array(DATA.rows.length); RES[n.id].forEach(i => s[i] = 1); sets[n.id] = s; }); }
-  const descRuled = id => { const out = []; (function w(x) { kids(x).forEach(k => { if (OWN[k.id] > 0) out.push(k.id); w(k.id); }); })(id); return out; };
+  const descRuled = id => { const out = [], seen = new Set([id]); (function w(x) { kids(x).forEach(k => { if (seen.has(k.id)) return; seen.add(k.id); if (OWN[k.id] > 0) out.push(k.id); w(k.id); }); })(id); return out; };
   ruled.forEach(n => {
     const D = deep ? descRuled(n.id) : [];
     for (const i of RES[n.id]) {
@@ -1830,7 +1867,7 @@ let SH = null;                         // { sets: {nodeId: Uint8Array-битсе
 /* блоки, которых не было в опубликованных данных или чьи правила поменялись после публикации:
    их числа по общим данным посчитать нельзя, нужна новая публикация */
 let STALE = new Set();
-const ruleSig = id => { const c = cfg[id], n = byId[id]; return JSON.stringify([n.p || "", c.from || "", (c.sub || []).slice().sort(), c.l || "", c.c.map(x => x.r && x.r.col ? [x.r.col, x.r.op || "", String(x.r.val == null ? "" : x.r.val), x.r.cmp || ""] : null).filter(Boolean)]); };
+const ruleSig = id => { const c = cfg[id], n = byId[id]; return JSON.stringify([parentsOf(id).join(";"), fromOf(id).join(";"), (c.sub || []).slice().sort(), c.l || "", c.c.map(x => x.r && x.r.col ? [x.r.col, x.r.op || "", String(x.r.val == null ? "" : x.r.val), x.r.cmp || ""] : null).filter(Boolean)]); };
 function staleSet() {
   const out = new Set(), memo = {};
   const st = id => {
@@ -1838,8 +1875,7 @@ function staleSet() {
     memo[id] = false;                                   /* защита от циклов */
     const c = cfg[id], n = byId[id];
     let v = !(id in SH.map) || (SH.sig && SH.sig[id] !== ruleSig(id));
-    const base = c.from && byId[c.from] && c.from !== id ? c.from : n.p;
-    if (!v && base) v = st(base);
+    if (!v) v = basesOf(id).some(st);
     if (!v) v = (c.sub || []).some(x => byId[x] && x !== id && st(x));
     return memo[id] = v;
   };
@@ -2039,7 +2075,7 @@ async function sharedDownloadAll() {
   const ruled = N.filter(n => OWN[n.id] > 0);
   const summary = [["Блок", "Путь", "Критерии блока", "Должников", "Правил в выборке"]];
   N.forEach(n => summary.push([n.t, pathText(n.id), critText(n.id), n.p && !OWN[n.id] ? "нет данных" : RES[n.id].length, OWN[n.id] || 0]));
-  const descRuled = id => { const out = []; (function w(x) { kids(x).forEach(k => { if (OWN[k.id] > 0) out.push(k.id); w(k.id); }); })(id); return out; };
+  const descRuled = id => { const out = [], seen = new Set([id]); (function w(x) { kids(x).forEach(k => { if (seen.has(k.id)) return; seen.add(k.id); if (OWN[k.id] > 0) out.push(k.id); w(k.id); }); })(id); return out; };
   const n = DATA.rows.length, sets = {};
   if (deep) ruled.forEach(nd => { const s = new Uint8Array(n); RES[nd.id].forEach(i => s[i] = 1); sets[nd.id] = s; });
   const parts = ["﻿" + csvLine(["Блок", "Путь"].concat(DATA.cols))];
@@ -2061,7 +2097,7 @@ function select(id) {
   Object.entries(nodeEls).forEach(([k, e]) => { e.classList.toggle("sel", k === id); e.classList.toggle("inpath", ids.has(k) && k !== id); });
   Object.entries(edgeEls).forEach(([k, e]) => {
     if (k.startsWith("r:")) { const [s0, t0] = k.slice(2).split(">"); e.classList.toggle("on", s0 === id || t0 === id); return; }
-    const on = k.startsWith("x:") ? k.split(">")[1] === id : ids.has(k); e.classList.toggle("on", on); e.setAttribute("marker-end", on ? "url(#arOn)" : "url(#ar)");
+    const on = k.startsWith("x:") || k.startsWith("p:") ? k.split(">")[1] === id : ids.has(k); e.classList.toggle("on", on); e.setAttribute("marker-end", on ? "url(#arOn)" : "url(#ar)");
   });
   renderPanel();
 }
@@ -2163,13 +2199,15 @@ function renderView(n, c, path) {
     });
   } else body = el("p", "empty", kids(n.id).length ? "Собственных критериев нет. Они заданы у вложенных блоков." : "Критерии для этого блока не заданы.");
   const meta = [];
-  if (n.p && byId[n.p]) meta.push("Родитель (сплошная стрелка): «" + byId[n.p].t + "» (" + n.p + ")");
-  if (c.from && byId[c.from]) meta.push("Берётся из блока «" + byId[c.from].t + "» (" + c.from + ")");
+  const pl = parentsOf(n.id), fl = fromOf(n.id), nm2 = x => "«" + byId[x].t + "» (" + x + ")";
+  if (pl.length) meta.push((pl.length > 1 ? "Родители: " : "Родитель: ") + pl.map(nm2).join(", ") + (pl.length > 1 && !fl.length ? ". Должники берутся из всех родителей вместе." : ""));
+  if (fromBad(n.id).length) meta.push("⚠ «Брать из блока» = " + fromBad(n.id).join("; ") + " не учитывается: этот блок ниже по схеме, получился бы круг. Блок считается от родителей.");
+  if (fl.length) meta.push("Должники берутся из «Брать из блока»: " + fl.map(nm2).join(", ") + (fl.length > 1 ? " (вместе)" : "") + ".");
   if (c.sub && c.sub.length) meta.push("Минус блоки: " + c.sub.map(x => (byId[x] ? byId[x].t : x) + " (" + x + ")").join("; "));
   if (c.l === "or" && c.c.length > 1) meta.push("Критерии связаны через ИЛИ");
   if (retsOf(n.id).length) meta.push("Пунктирный возврат от: " + retsOf(n.id).map(x => byId[x].t + " (" + x + ")").join("; ") + ". Только на схеме.");
   if (retFrom(n.id).length) meta.push("Пунктирный возврат в: " + retFrom(n.id).map(x => x.t + " (" + x.id + ")").join("; ") + ".");
-  if (linksOf(n.id).length) { const base = c.from && byId[c.from] ? byId[c.from] : byId[n.p]; meta.push("Стрелки также от: " + linksOf(n.id).map(x => byId[x].t + " (" + x + ")").join("; ") + ". Это только на схеме: должники в блок отбираются из «" + (base ? base.t : "—") + "»."); }
+  if (linksOf(n.id).length) meta.push("Стрелки только для наглядности от: " + linksOf(n.id).map(x => byId[x].t + " (" + x + ")").join("; ") + ". На подсчёт не влияют.");
   const bw = el("div"); bw.appendChild(body);
   meta.forEach(t => bw.appendChild(el("p", "hint", t)));
   panel.appendChild(section("Критерии блока", bw, edit));
@@ -2254,8 +2292,27 @@ function renderEditor(n, c) {
       setStatus("Родитель изменён на «" + byId[n.p].t + "» (" + n.p + ")" + (c.from && byId[c.from] && c.from !== n.p ? ". Должники по-прежнему отбираются из «Брать из блока» = " + c.from : ""), 7000);
     });
     pbox.appendChild(ps);
-    pbox.appendChild(el("p", "hint", "От родителя идёт сплошная стрелка, и по умолчанию блок отбирает должников из него (если не задано «Брать из блока»). Смена родителя меняет подсчёт." + (!n.custom && n.p !== n.p0 && byId[n.p0] ? " В исходной схеме родитель — «" + byId[n.p0].t + "» (" + n.p0 + ")." : "")));
-    panel.appendChild(section("Родитель (сплошная стрелка)", pbox));
+    const xbox = el("div"); xbox.style.marginTop = "8px";
+    psOf(n.id).forEach(x => {
+      const line = el("div", "line"); line.style.marginBottom = "6px";
+      line.appendChild(el("span", null, "+ " + byId[x].t + " (" + x + ")"));
+      line.appendChild(mini("Убрать", () => { c.ps = psOf(n.id).filter(y => y !== x); dirty.add(n.id); relayout(true); recalc(); changed(); renderPanel(); select(sel); }, "danger"));
+      xbox.appendChild(line);
+    });
+    const xopts = N.filter(x => !parentsOf(n.id).includes(x.id) && !parentError(n.id, x.id)).map(x => [x.id, x.t + " (" + x.id + ")"]);
+    const xadd = selectEl([["", "+ Ещё родитель…"]].concat(xopts), "", "Добавить родителя");
+    xadd.addEventListener("change", () => {
+      if (!xadd.value) return;
+      const err = setParents(n.id, parentsOf(n.id).concat(xadd.value));
+      if (err) { setStatus("Родитель не добавлен: " + err, 6000); xadd.value = ""; return; }
+      relayout(true); recalc(); changed(); renderPanel(); select(sel);
+      setStatus("Добавлен родитель «" + byId[xadd.value].t + "»" + (fromOf(n.id).length ? ". Но сейчас должники берутся из «Брать из блока» = " + fromOf(n.id).join("; ") + ", поэтому на подсчёт это не влияет" : ": блок отбирает должников из всех родителей вместе"), 8000);
+    });
+    xbox.appendChild(xadd); pbox.appendChild(xbox);
+    if (fromBad(n.id).length) pbox.appendChild(el("p", "warn-note", "«Брать из блока» = " + fromBad(n.id).join("; ") + " не учитывается: этот блок находится ниже, получился бы круг. Исправьте «Брать из блока» в таблице правил."));
+    if (fromOf(n.id).length) pbox.appendChild(el("p", "warn-note", "Заполнено «Брать из блока» = " + fromOf(n.id).join("; ") + ": должники берутся оттуда, родители влияют только на стрелки. Чтобы считать от родителей, очистите «Брать из блока» в таблице правил."));
+    pbox.appendChild(el("p", "hint", "От каждого родителя идёт сплошная стрелка; блок отбирает должников из всех родителей вместе (если не задано «Брать из блока»). Первый — основной: по нему строится путь в панели." + (!n.custom && n.p !== n.p0 && byId[n.p0] ? " В исходной схеме родитель — «" + byId[n.p0].t + "» (" + n.p0 + ")." : "")));
+    panel.appendChild(section("Родители (сплошная стрелка, подсчёт)", pbox));
   }
   if (!c.txt) c.txt = c.c.map(x => x.t);
   const cbox = el("div", "ed"), cwrap = el("div");
@@ -2299,7 +2356,7 @@ function renderEditor(n, c) {
     draw();
     panel.appendChild(section(title, box));
   };
-  arrowEditor("links", "Дополнительные сплошные стрелки", "+ Стрелка от блока…", "Только рисуются на схеме, на подсчёт не влияют.");
+  arrowEditor("links", "Стрелки только для наглядности", "+ Стрелка от блока…", "Сплошные стрелки, которые только рисуются и на подсчёт не влияют. Если блок должен считаться и от этого блока — добавьте его в «Родители».");
   arrowEditor("rets", "Пунктир «возврат в ветку»", "+ Пунктир от блока…", "Пунктирная стрелка из выбранного блока в этот. Только рисунок, на подсчёт не влияет.");
 
   const qbox = el("div", "ed"), qwrap = el("div");
