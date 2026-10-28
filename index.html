@@ -128,6 +128,7 @@ aside { background: var(--surface); border: 1px solid var(--line); border-radius
 .flow .fl-r { max-height: 260px; overflow: auto; }
 .flow .fl-link { font: inherit; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-align: left; }
 .flow .hint { margin: 2px 0 0; }
+.delzone { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .warn-note { font-size: 12.5px; color: #b4540a; margin: 6px 0 0; }
 .kind .kcode { text-transform: none; color: var(--accent); font-weight: 600; letter-spacing: 0; }
 .kind { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; }
@@ -271,6 +272,7 @@ body { margin: 0; }
     <button class="btn" id="sharedBtn" hidden title="Показать данные, которые опубликовал коллега">Общие данные</button>
     <button class="btn more" id="addBlk" title="Добавить новый блок на схему">Добавить блок</button>
     <button class="btn more" id="dlRules" title="Скачать таблицу правил с текущими блоками и критериями">Скачать таблицу правил</button>
+    <button class="btn more" id="restoreDel" hidden title="Вернуть на схему удалённые блоки исходной схемы">Вернуть удалённые блоки</button>
     <button class="btn more" id="resetPos" hidden title="Вернуть все блоки на места, заданные схемой">Вернуть блоки на места</button>
     <span class="status" id="status" role="status"></span>
     <div class="rulesinfo more" id="rulesInfo" hidden></div>
@@ -359,6 +361,60 @@ const fromBad = id => fromRaw(id).filter(x => isUnder(x, id));
 const fromOf = id => fromRaw(id).filter(x => !isUnder(x, id));
 const basesOf = id => { const f = fromOf(id); return f.length ? f : parentsOf(id); };
 const kids = id => N.filter(n => n.p === id || psOf(n.id).includes(id));
+/* Удаление блоков. Добавленные удаляются совсем, блоки исходной схемы скрываются (cfg.__del) и их можно вернуть.
+   Вложенные блоки переходят к родителю удаляемого, ссылки на него из других блоков убираются. */
+const BUILTIN = N.slice();
+const NODEL = ["root", "dead"];
+function dropRefs(id) {
+  N.forEach(x => {
+    const c = cfg[x.id]; if (!c) return;
+    ["links", "ps", "sub"].forEach(k => { if (Array.isArray(c[k]) && c[k].includes(id)) c[k] = c[k].filter(y => y !== id); });
+    if (Array.isArray(c.rets) && c.rets.includes(id)) c.rets = c.rets.filter(y => y !== id);
+    if (c.from && splitCodes(c.from).includes(id)) c.from = splitCodes(c.from).filter(y => y !== id).join("; ");
+  });
+  if (cfg.__par) Object.keys(cfg.__par).forEach(k => { if (cfg.__par[k] === id) delete cfg.__par[k]; });
+}
+function deleteBlock(id) {
+  const n = byId[id]; if (!n) return "нет такого блока";
+  if (NODEL.includes(id)) return "этот блок удалить нельзя";
+  const up = n.p, moved = [];
+  kids(id).forEach(k => {
+    if (k.p === id) {                                 /* основной родитель уходит: переходим к родителю удаляемого */
+      const rest = psOf(k.id).filter(x => x !== up);
+      const err = setParents(k.id, [up].concat(rest)); if (!err) moved.push(k.t);
+    }
+  });
+  dropRefs(id);
+  N.splice(N.indexOf(n), 1); delete byId[id];
+  if (nodeEls[id]) { nodeEls[id].remove(); delete nodeEls[id]; }
+  if (n.custom) delete cfg[id];
+  else { cfg.__del = (cfg.__del || []).filter(x => x !== id).concat(id); delete cfg[id]; }
+  syncNodeList();
+  if (typeof dirty !== "undefined") { N.forEach(x => dirty.add(x.id)); ["__par", "__nodes", "__del"].forEach(k => dirty.add(k)); }
+  return { moved };
+}
+/* перед применением чужих настроек возвращаем скрытые блоки исходной схемы, чтобы список удалённых взялся из них */
+function restoreHidden() { BUILTIN.forEach(n => { if (!byId[n.id]) { N.push(n); byId[n.id] = n; cfg[n.id] = cfg[n.id] || defCfg(n); } }); }
+function hideDeleted(list) {
+  cfg.__del = [];
+  (Array.isArray(list) ? list : []).forEach(id => {
+    const n = byId[id]; if (!n || n.custom || NODEL.includes(id)) return;
+    N.splice(N.indexOf(n), 1); delete byId[id]; delete cfg[id];
+    if (typeof nodeEls !== "undefined" && nodeEls[id]) { nodeEls[id].remove(); delete nodeEls[id]; }
+    cfg.__del.push(id);
+  });
+}
+function restoreDeleted() {
+  const back = [];
+  (cfg.__del || []).forEach(id => {
+    const n = BUILTIN.find(x => x.id === id); if (!n || byId[id]) return;
+    n.p = byId[n.p0] ? n.p0 : "dead"; n.x = n.x0; n.y = n.y0; n.t = n.t0;
+    N.push(n); byId[id] = n; cfg[id] = defCfg(n); back.push(n.t);
+  });
+  cfg.__del = [];
+  if (typeof dirty !== "undefined") { N.forEach(x => dirty.add(x.id)); dirty.add("__del"); }
+  return back;
+}
 /* id — потомок anc (или он сам)? Защита от циклов при смене родителя */
 const isUnder = (id, anc) => {                     /* anc достижим вверх от id по любым родителям */
   const seen = new Set(), st = [id];
@@ -397,7 +453,9 @@ function setParent(id, p) {
 }
 function applyParents(map) {
   cfg.__par = {};
-  N.forEach(n => { if (!n.custom && n.id !== "root") n.p = n.p0; });
+  /* исходный родитель мог быть удалён — поднимаемся по исходной схеме до существующего блока */
+  const live = p => { let x = p, k = 0; while (x && !byId[x] && k++ < 50) { const b = BUILTIN.find(y => y.id === x); x = b ? b.p0 : ""; } return x || "dead"; };
+  N.forEach(n => { if (!n.custom && n.id !== "root") n.p = live(n.p0); });
   Object.entries(map && typeof map === "object" ? map : {}).forEach(([id, p]) => {
     const n = byId[id]; if (!n || n.custom) return;
     if (!parentError(id, String(p))) { n.p = String(p); cfg.__par[id] = String(p); }
@@ -456,6 +514,7 @@ const defCfg = n => {
 const cfg = Object.fromEntries(N.map(n => [n.id, defCfg(n)]));
 cfg.__v = 2;
 cfg.__par = {};
+cfg.__del = [];
 let pendingTable = null;
 let editing = false;
 
@@ -502,6 +561,8 @@ function syncNodes(list) {
 function applySaved(obj) {
   if (!obj || typeof obj !== "object") return;
   const v2 = obj.__v >= 2;
+  restoreHidden();
+  hideDeleted(obj.__del);
   syncNodes(obj.__nodes);
   applyParents(obj.__par);
   N.forEach(n => {
@@ -586,7 +647,7 @@ async function saveRemote() {
           const r = await ghGet("config.json");
           if (r) { applySaved(r.json.cfg); cfgSha = r.sha; } else cfgSha = null;
           dirty.forEach(id => { if (mine[id] !== undefined) cfg[id] = mine[id]; });
-          if (dirty.has("__par") || dirty.has("__nodes")) { syncNodes(cfg.__nodes); applyParents(cfg.__par); relayout(); }
+          if (dirty.has("__par") || dirty.has("__nodes") || dirty.has("__del")) { restoreHidden(); hideDeleted(cfg.__del); syncNodes(cfg.__nodes); applyParents(cfg.__par); relayout(); }
           continue;
         }
         setStatus(e.status === 401 || e.status === 403 ? "Нет прав записи: токен просрочен или неверный. Войдите заново." : "Не удалось сохранить: " + e.message, 8000);
@@ -720,6 +781,7 @@ function placeNodeEls() {
 function relayout(keepView) {
   if (keepView === undefined) keepView = !!editing;      /* в режиме правки схема не прыгает к центру */
   placeAll(); syncNodeEls(); drawEdges();
+  if (typeof refreshResetDel === "function") refreshResetDel();
   const moved = N.filter(n => cfg[n.id] && cfg[n.id].pos).length;
   const rp = $("#resetPos");
   if (rp) { rp.hidden = !moved; rp.textContent = "Вернуть блоки на места (" + moved + ")"; }
@@ -1655,6 +1717,12 @@ async function downloadRules() {
   finally { btn.disabled = false; }
 }
 $("#dlRules").addEventListener("click", downloadRules);
+function refreshResetDel() { const b = $("#restoreDel"); if (!b) return; const k = (cfg.__del || []).length; b.hidden = !k; b.textContent = "Вернуть удалённые блоки (" + k + ")"; }
+$("#restoreDel").addEventListener("click", () => {
+  if (REMOTE && !TOKEN) { setStatus("Войдите для правки, чтобы вернуть блоки для всех", 5000); showAuth(); return; }
+  const back = restoreDeleted(); relayout(); recalc(); store.save(); refreshResetDel(); if (sel) select(sel);
+  setStatus("Возвращены блоки: " + (back.join(", ") || "—") + ". Они встали на свои места и получили критерии по умолчанию — проверьте их в таблице правил", 9000);
+});
 $("#resetPos").addEventListener("click", () => {
   if (REMOTE && !TOKEN) { setStatus("Войдите для правки, чтобы вернуть блоки на места для всех", 5000); showAuth(); return; }
   N.forEach(n => { if (cfg[n.id] && cfg[n.id].pos) { cfg[n.id].pos = null; if (typeof dirty !== "undefined") dirty.add(n.id); } });
@@ -2463,6 +2531,23 @@ function ruleBuilder(crit) {
 }
 function renderEditor(n, c) {
   panel.appendChild(el("p", "hint", "Название, формулировки критериев, вопросы и примечание правятся здесь своими словами и сохраняются; загрузка таблицы правил их не затирает. Расчёт (правила отбора) меняется только через таблицу."));
+  if (!NODEL.includes(n.id)) {
+    const dz = el("div", "delzone");
+    const ks = kids(n.id), up = byId[n.p];
+    const ask = mini("Удалить блок", () => {
+      dz.replaceChildren();
+      dz.appendChild(el("p", "warn-note", "Удалить «" + n.t + "» (" + n.id + ")?" + (ks.length ? " Вложенные блоки (" + ks.map(k => k.id).join(", ") + ") перейдут к «" + (up ? up.t : "—") + "»." : "") + (n.custom ? "" : " Это блок исходной схемы — его можно будет вернуть кнопкой «Вернуть удалённые блоки».") + " Подсчёт вложенных блоков изменится."));
+      const yes = mini("Да, удалить", () => {
+        const r = deleteBlock(n.id);
+        if (typeof r === "string") { setStatus("Блок не удалён: " + r, 6000); renderPanel(); return; }
+        editing = false; sel = up && byId[up.id] ? up.id : "dead"; relayout(true); recalc(); store.save(); select(sel); refreshResetDel();
+        setStatus("Блок удалён" + (r.moved.length ? ", вложенные перешли к «" + byId[sel].t + "»" : ""), 6000);
+      }, "danger");
+      dz.appendChild(yes); dz.appendChild(mini("Отмена", () => renderPanel()));
+    }, "danger");
+    dz.appendChild(ask);
+    panel.appendChild(dz);
+  }
   const nm = el("input"); nm.type = "text"; nm.value = c.uname || c.name || n.t0; nm.style.width = "100%"; nm.setAttribute("aria-label", "Название блока");
   nm.addEventListener("input", () => { c.uname = nm.value.trim(); n.t = c.uname || c.name || n.t0; changed(); });
   panel.appendChild(section("Название блока", nm));
@@ -2568,17 +2653,7 @@ function renderEditor(n, c) {
   const done = el("button", "btn primary", "Готово"); done.type = "button";
   done.addEventListener("click", () => { if (c.txt) c.txt = c.txt.filter(t => t.trim()); c.q = c.q.filter(t => t.trim()); editing = false; recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); });
   acts.appendChild(done);
-  if (n.custom) acts.appendChild(mini("Удалить блок", () => {
-    if (kids(n.id).length) { setStatus("Сначала перенесите или удалите вложенные блоки", 5000); return; }
-    const id = n.id;
-    N.splice(N.indexOf(n), 1); delete byId[id]; delete cfg[id];
-    N.forEach(x => { const c2 = cfg[x.id]; if (!c2) return; if (c2.links && c2.links.includes(id)) c2.links = c2.links.filter(y => y !== id); if (Array.isArray(c2.rets) && c2.rets.includes(id)) c2.rets = c2.rets.filter(y => y !== id); });
-    if (cfg.__par) Object.keys(cfg.__par).forEach(k => { if (cfg.__par[k] === id) delete cfg.__par[k]; });
-    if (nodeEls[id]) { nodeEls[id].remove(); delete nodeEls[id]; }
-    syncNodeList(); if (typeof dirty !== "undefined") N.forEach(x => dirty.add(x.id));
-    editing = false; sel = "dead"; relayout(); store.save(); renderPanel();
-    setStatus("Блок удалён", 3000);
-  }, "danger"));
+
   acts.appendChild(mini("Вернуть блок на место", () => { c.pos = null; if (typeof dirty !== "undefined") dirty.add(sel); relayout(); store.save(); }));
   acts.appendChild(mini("Вернуть все блоки на места", () => { N.forEach(x => { if (cfg[x.id]) cfg[x.id].pos = null; if (typeof dirty !== "undefined") dirty.add(x.id); }); relayout(); store.save(); }));
   acts.appendChild(mini("Вернуть критерии по умолчанию", () => { cfg[sel] = defCfg(n); recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); }, "danger"));
