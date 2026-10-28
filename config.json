@@ -1,6 +1,6 @@
 {
  "v": 2,
- "updated": "2026-10-28T07:31:32.341Z",
+ "updated": "2026-10-28T08:24:44.613Z",
  "cfg": {
   "root": {
    "c": [],
@@ -15,7 +15,8 @@
    "txt": [],
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "dead": {
    "c": [
@@ -40,7 +41,8 @@
    ],
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A": {
    "c": [
@@ -94,7 +96,8 @@
    ],
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "B": {
    "c": [
@@ -124,7 +127,8 @@
    ],
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A1": {
    "c": [
@@ -183,7 +187,8 @@
    "links": [
     "U5",
     "U4"
-   ]
+   ],
+   "rets": null
   },
   "A1s": {
    "c": [
@@ -210,7 +215,8 @@
     "x": 140,
     "y": 460
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A1c": {
    "c": [
@@ -238,7 +244,8 @@
     "x": 140,
     "y": 540
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A1r": {
    "c": [],
@@ -254,7 +261,8 @@
     "x": 140,
     "y": 630
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A1n": {
    "c": [
@@ -284,7 +292,8 @@
     "x": 80,
     "y": 710
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A1o": {
    "c": [
@@ -312,7 +321,8 @@
     "x": 210,
     "y": 710
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A1na": {
    "c": [
@@ -341,7 +351,8 @@
     "x": 70,
     "y": 810
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A1nb": {
    "c": [
@@ -371,7 +382,8 @@
     "x": 200,
     "y": 810
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A2": {
    "c": [
@@ -457,7 +469,8 @@
     "x": 470,
     "y": 260
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A2s": {
    "c": [
@@ -485,7 +498,8 @@
     "x": 420,
     "y": 460
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A2c": {
    "c": [
@@ -514,7 +528,8 @@
     "x": 420,
     "y": 540
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A2r": {
    "c": [],
@@ -530,7 +545,8 @@
     "x": 420,
     "y": 630
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A2n": {
    "c": [
@@ -558,7 +574,8 @@
     "x": 370,
     "y": 710
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A2o": {
    "c": [
@@ -595,7 +612,8 @@
     "x": 510,
     "y": 710
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A2na": {
    "c": [
@@ -618,7 +636,8 @@
     "x": 360,
     "y": 810
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "A2nb": {
    "c": [
@@ -647,7 +666,8 @@
     "x": 490,
     "y": 810
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "Bm": {
    "c": [
@@ -672,7 +692,8 @@
    ],
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "Ba": {
    "c": [
@@ -697,7 +718,8 @@
    ],
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "I": {
    "c": [
@@ -739,7 +761,8 @@
    ],
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "Is": {
    "c": [],
@@ -760,7 +783,8 @@
    ],
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "Ic": {
    "c": [
@@ -787,7 +811,8 @@
    ],
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "Ir": {
    "c": [],
@@ -800,7 +825,8 @@
    "txt": null,
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "Iw": {
    "c": [
@@ -820,7 +846,8 @@
    ],
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "In": {
    "c": [],
@@ -833,7 +860,8 @@
    "txt": null,
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "Io": {
    "c": [],
@@ -846,7 +874,8 @@
    "txt": null,
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "Ina": {
    "c": [],
@@ -862,7 +891,8 @@
    ],
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "Inb": {
    "c": [
@@ -886,9 +916,11 @@
    ],
    "uname": "",
    "pos": null,
-   "links": []
+   "links": [],
+   "rets": null
   },
   "__v": 2,
+  "__par": {},
   "C": {
    "c": [
     {
@@ -917,7 +949,8 @@
     "x": 580,
     "y": 150
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "Bc": {
    "c": [
@@ -945,7 +978,8 @@
     "x": 1130,
     "y": 260
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "U1": {
    "c": [],
@@ -961,7 +995,8 @@
     "x": 140,
     "y": 950
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "U2": {
    "c": [
@@ -1000,7 +1035,8 @@
    },
    "links": [
     "Ic"
-   ]
+   ],
+   "rets": null
   },
   "U3": {
    "c": [],
@@ -1018,7 +1054,8 @@
     "x": -20,
     "y": 110
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "U4": {
    "c": [
@@ -1041,7 +1078,8 @@
     "x": -50,
     "y": 260
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "U5": {
    "c": [
@@ -1062,7 +1100,8 @@
     "x": 190,
     "y": 260
    },
-   "links": []
+   "links": [],
+   "rets": null
   },
   "__nodes": [
    {
