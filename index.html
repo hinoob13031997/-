@@ -108,6 +108,26 @@ aside { background: var(--surface); border: 1px solid var(--line); border-radius
 .crumbs button { background: none; border: 0; padding: 0; cursor: pointer; color: var(--accent); text-align: left; }
 .crumbs button:hover { text-decoration: underline; }
 .crumbs span { color: var(--muted); }
+.flow { border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.flow > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 9px 12px; font-size: 13px; }
+.flow > summary::-webkit-details-marker { display: none; }
+.flow > summary::before { content: "▸"; color: var(--muted); }
+.flow[open] > summary::before { content: "▾"; }
+.flow .fl-t { font-weight: 600; }
+.flow .fl-s { color: var(--muted); font-size: 12.5px; }
+.flow .bad { color: #b4540a; }
+.flow .fl-b { padding: 0 12px 10px; display: flex; flex-direction: column; gap: 6px; }
+.flow .fl-h { margin: 4px 0 0; font-size: 12.5px; font-weight: 600; }
+.flow .fl-row { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+.flow .fl-k .fl-row { justify-content: space-between; }
+.flow .fl-n { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; min-width: 56px; text-align: right; }
+.flow .fl-r .fl-n { color: #b4540a; }
+.flow .fl-l { flex: 1; }
+.flow .fl-br { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); margin-top: 6px; padding-top: 4px; }
+.flow .fl-br .fl-n { color: var(--muted); }
+.flow .fl-r { max-height: 260px; overflow: auto; }
+.flow .fl-link { font: inherit; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-align: left; }
+.flow .hint { margin: 2px 0 0; }
 .warn-note { font-size: 12.5px; color: #b4540a; margin: 6px 0 0; }
 .kind .kcode { text-transform: none; color: var(--accent); font-weight: 600; letter-spacing: 0; }
 .kind { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0; }
@@ -1922,7 +1942,8 @@ function buildShared() {
   });
   const ver = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const sig = Object.fromEntries(N.map(nd => [nd.id, ruleSig(nd.id)]));
-  return { v: 1, ver, at: new Date().toISOString(), file: DATA.file, sheet: DATA.sheet || "", n, ids, amt, dd, own: owns, map, sets, sig };
+  const why = packWhy(res, own);
+  return { v: 1, ver, at: new Date().toISOString(), file: DATA.file, sheet: DATA.sheet || "", n, ids, amt, dd, own: owns, map, sets, sig, why };
 }
 async function repoShas() {
   const r = await fetch(API.replace(/\/$/, "") + "?ref=" + BR + "&_=" + Date.now(), { headers: ghHeaders(), cache: "no-store" });
@@ -2003,7 +2024,8 @@ function applyShared(j) {
     rows[i] = r;
   }
   const dec = {}; Object.entries(j.sets).forEach(([k, v]) => { dec[k] = unb64(v); });
-  SH = { sets: {}, own: j.own || {}, map: j.map || {}, sig: j.sig || null };
+  const uw = unpackWhy(j.why);
+  SH = { sets: {}, own: j.own || {}, map: j.map || {}, sig: j.sig || null, why: uw.why, whyLabels: uw.labels };
   Object.entries(j.map).forEach(([id, k]) => { SH.sets[id] = dec[k]; });
   DATA = { file: j.file, shared: { ver: j.ver, at: j.at, n }, cols, rows, sheet: j.sheet || "", sheets: [] };
   previewCache = {}; buildCaches(); SHARED_VER = j.ver; sharedNotified = j.ver;
@@ -2089,6 +2111,167 @@ async function sharedDownloadAll() {
   await saveBlob(new Blob(["﻿" + summary.map(csvLine).join("")], { type: "text/csv;charset=utf-8" }), "Сводка воронки.csv");
 }
 
+/* ---------- куда уходят должники блока и почему выпадают ---------- */
+/* Вложенные блоки, которые считаются от этого блока (а не через «Брать из блока» от другого) */
+const flowKids = id => kids(id).filter(k => basesOf(k.id).includes(id));
+const fmtD = ms => { if (typeof ms !== "number") return ""; const d = new Date(ms), p = x => String(x).padStart(2, "0"); return p(d.getUTCDate()) + "." + p(d.getUTCMonth() + 1) + "." + d.getUTCFullYear(); };
+/* Причина выпадения.
+   1) Условия ветки, которые выполняются у всех должников блока (повтор условий родителя), не учитываем.
+   2) «Развилка»: условия на ту же колонку, что у соседней ветки, но с другим значением (замена Да / Нет,
+      дата ИД заполнена / пуста). Должник относится к ветке, чьи условия развилки он проходит.
+   3) Среди таких веток (или среди всех, если не подошла ни одна) берём ту, где он прошёл больше условий,
+      и называем первое условие, которое он там не прошёл. resX/ownX — множества блоков. */
+function flowReasons(id, rows, resX, ownX) {
+  const n = nRows(), ks = flowKids(id), base = resX[id] || [], subMark = {};
+  const mark = sid => { if (!subMark[sid]) { const m = new Uint8Array(n); (resX[sid] || []).forEach(i => { m[i] = 1; }); subMark[sid] = m; } return subMark[sid]; };
+  const T = ks.map(k => {
+    const c = cfg[k.id], tl = [];
+    c.c.forEach(x => {
+      const t = makeTest(x.r); if (!t) return;
+      let all = true; for (let j = 0; j < base.length; j++) if (!t(base[j])) { all = false; break; }
+      if (!all) tl.push({ t, txt: describeRule(x.r), col: colIdx(x.r.col), sig: (x.r.op || "") + "|" + String(x.r.val || "").toLowerCase() + "|" + (x.r.cmp || "") });
+    });
+    return { k, tl, or: c.l === "or", sub: (c.sub || []).filter(x => byId[x] && x !== k.id && ownX[x] > 0) };
+  });
+  T.forEach(x => { x.fork = x.or ? [] : x.tl.filter(o => T.some(y => y !== x && y.tl.some(q => q.col === o.col && q.sig !== o.sig))); });
+  const name = k => "«" + k.t + "» (" + k.id + ")";
+  const out = new Map();
+  for (const i of rows) {
+    const cand = T.filter(x => x.fork.length && x.fork.every(o => o.t(i)));
+    let best = null, bs = -1;
+    for (const x of (cand.length ? cand : T)) {
+      const pass = x.tl.filter(o => o.t(i)).length;
+      if (pass > bs) { bs = pass; best = x; }
+    }
+    if (!best) { out.set(i, "нет подходящего вложенного блока"); continue; }
+    let lab;
+    if (best.or) lab = best.tl.some(o => o.t(i)) ? null : name(best.k) + ": не выполнено ни одно из условий (ИЛИ)";
+    else { const f = best.tl.find(o => !o.t(i)); lab = f ? name(best.k) + ": не выполнено «" + f.txt + "»" : null; }
+    if (!lab) { const sb = best.sub.find(sid => mark(sid)[i]); lab = name(best.k) + ": вычтен — уже в «" + (sb ? byId[sb].t : "другом блоке") + "»"; }
+    out.set(i, lab);
+  }
+  return out;
+}
+/* Итог по блоку: сколько ушло в каждый вложенный блок, сколько не дошло никуда и сколько попало в несколько */
+function flowCounts(id) {
+  const n = nRows(), base = RES[id] || [], ks = flowKids(id);
+  if (!ks.length) return null;
+  const inB = new Uint8Array(n), hit = new Uint8Array(n);
+  base.forEach(i => { inB[i] = 1; });
+  const per = ks.map(k => { let c = 0; (RES[k.id] || []).forEach(i => { if (inB[i]) { c++; if (hit[i] < 255) hit[i]++; } }); return { k, c }; });
+  const lost = [], multi = [];
+  base.forEach(i => { if (!hit[i]) lost.push(i); else if (hit[i] > 1) multi.push(i); });
+  return { base, per, lost, multi, other: kids(id).filter(k => !ks.includes(k)) };
+}
+/* Причины считаются по блокам без фильтров — так же, как в опубликованных данных; фильтр только сужает список */
+let ALLSETS = null;
+function allSets() {
+  const key = N.map(n => n.id + ":" + ruleSig(n.id)).join("|");
+  if (!ALLSETS || ALLSETS.data !== DATA || ALLSETS.key !== key) ALLSETS = Object.assign({ data: DATA, key }, computeSets(Array.from({ length: nRows() }, (_, i) => i)));
+  return ALLSETS;
+}
+let flowOpen = false;
+try { flowOpen = localStorage.getItem("funnel-flow-open") === "1"; } catch (e) {}
+function flowSection() {
+  const d = el("details", "flow"); d.id = "flow"; d.open = flowOpen; d.hidden = true;
+  d.addEventListener("toggle", () => { flowOpen = d.open; try { localStorage.setItem("funnel-flow-open", flowOpen ? "1" : "0"); } catch (e) {} if (flowOpen) updateFlow(); });
+  return d;
+}
+function idOf(i) {
+  if (DATA.shared) return DATA.rows[i][0];
+  if (DATA.big) return DATA.idRaw ? DATA.idRaw[i] : "";
+  const ci = colIdx(ID_COL); return ci >= 0 ? DATA.rows[i][ci] : "";
+}
+async function flowDownload(id, label, rows) {
+  const dI = colIdx(DEAD_COL), aI = colIdx(AMT_COL);
+  const lines = [csvLine([ID_COL, "Причина", DEAD_COL, AMT_COL])];
+  rows.forEach(i => lines.push(csvLine([cleanId(idOf(i)), label, dI >= 0 ? fmtD(NORM[dI][i]) : "", aI >= 0 && typeof NORM[aI][i] === "number" ? NORM[aI][i] : ""])));
+  await saveBlob(new Blob(["﻿" + lines.join("")], { type: "text/csv;charset=utf-8" }), "Выпали из " + safeName(byId[id].t) + " - " + safeName(label.replace(/[«»"]/g, "").replace(/:\s*/, " - ")).slice(0, 90) + ".csv");
+}
+function updateFlow() {
+  const d = $("#flow"); if (!d || !sel || !RES) return;
+  const id = sel, fc = flowCounts(id);
+  d.replaceChildren();
+  if (!fc) { d.hidden = true; return; }
+  d.hidden = false;
+  const stale = DATA.shared && (STALE.has(id) || fc.per.some(x => STALE.has(x.k.id)));
+  const sm = el("summary");
+  sm.appendChild(el("span", "fl-t", "Куда уходят должники"));
+  const pct = fc.base.length ? fc.lost.length / fc.base.length * 100 : 0;
+  sm.appendChild(el("span", "fl-s" + (fc.lost.length ? " bad" : ""), stale ? "нужна новая публикация" : fc.lost.length ? "не дошли дальше: " + nf.format(fc.lost.length) + " (" + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" : "все дошли дальше"));
+  d.appendChild(sm);
+  if (!d.open) return;
+  if (stale) { d.appendChild(el("p", "hint", "Этот блок или его вложенные блоки изменены после публикации общих данных. Загрузите выгрузку и снова нажмите «Опубликовать для всех».")); return; }
+  const body = el("div", "fl-b");
+  body.appendChild(el("p", "fl-h", "Из " + nf.format(fc.base.length) + " должников блока:"));
+  const ul = el("div", "fl-k");
+  fc.per.forEach(({ k, c }) => {
+    const r = el("div", "fl-row"); const b = el("button", "fl-link", k.t + " (" + k.id + ")"); b.type = "button";
+    b.addEventListener("click", () => select(k.id)); r.appendChild(b); r.appendChild(el("span", "fl-n", nf.format(c))); ul.appendChild(r);
+  });
+  body.appendChild(ul);
+  if (fc.lost.length) {
+    body.appendChild(el("p", "fl-h bad", "Не попали ни в один вложенный блок: " + nf.format(fc.lost.length)));
+    let why = null;
+    if (DATA.shared) {
+      const w = SH.why && SH.why[id];
+      why = new Map(); if (w) w.rows.forEach((r, k) => why.set(r, SH.whyLabels[w.codes[k]]));
+    } else { const A = allSets(); why = flowReasons(id, fc.lost, A.res, A.own); }
+    const groups = new Map();
+    fc.lost.forEach(i => { const l = why.get(i) || "причина не сохранена при публикации"; if (!groups.has(l)) groups.set(l, []); groups.get(l).push(i); });
+    /* группируем по ветке, куда должник шёл: «ветка» → причины */
+    const br = new Map();
+    groups.forEach((rows, l) => { const k = l.indexOf(": "), b = k > 0 ? l.slice(0, k) : "", t = k > 0 ? l.slice(k + 2) : l; if (!br.has(b)) br.set(b, { n: 0, items: [] }); const g = br.get(b); g.n += rows.length; g.items.push([t, l, rows]); });
+    const rs = el("div", "fl-r");
+    [...br.entries()].sort((a, b) => b[1].n - a[1].n).forEach(([b, g]) => {
+      if (b) { const h = el("div", "fl-br"); h.appendChild(el("span", null, "шли в " + b)); h.appendChild(el("span", "fl-n", nf.format(g.n))); rs.appendChild(h); }
+      g.items.sort((x, y) => y[2].length - x[2].length).forEach(([t, l, rows]) => {
+        const r = el("div", "fl-row");
+        r.appendChild(el("span", "fl-n", nf.format(rows.length)));
+        r.appendChild(el("span", "fl-l", t));
+        const dl = el("button", "mini", "ID"); dl.type = "button"; dl.title = "Скачать ID этих должников (CSV)";
+        dl.addEventListener("click", () => flowDownload(id, l, rows)); r.appendChild(dl);
+        rs.appendChild(r);
+      });
+    });
+    body.appendChild(rs);
+  }
+  if (fc.multi.length) body.appendChild(el("p", "hint", "Попали сразу в несколько вложенных блоков: " + nf.format(fc.multi.length) + " — условия веток пересекаются."));
+  if (fc.other.length) body.appendChild(el("p", "hint", "Не из этого блока считаются: " + fc.other.map(k => "«" + k.t + "» (" + k.id + ") — от " + basesOf(k.id).join("; ")).join(", ") + "."));
+  body.appendChild(el("p", "hint", "Причина — первое условие, которое должник не прошёл в той ветке, где продвинулся дальше всего." + (onlyRecent || minAmt > 0 ? " С учётом фильтров." : "")));
+  d.appendChild(body);
+}
+/* для публикации: причины по всем блокам без фильтров; строки — разности (varint), коды — Uint16 */
+function packWhy(res, own) {
+  const labels = [], li = new Map(), blocks = {};
+  N.forEach(nd => {
+    const ks = flowKids(nd.id); if (!ks.length) return;
+    const n = nRows(), hit = new Uint8Array(n);
+    ks.forEach(k => (res[k.id] || []).forEach(i => { hit[i] = 1; }));
+    const lost = (res[nd.id] || []).filter(i => !hit[i]);
+    if (!lost.length) return;
+    const why = flowReasons(nd.id, lost, res, own);
+    const bytes = [], codes = new Uint16Array(lost.length);
+    let prev = -1;
+    lost.forEach((i, k) => {
+      let dlt = i - prev; prev = i;
+      while (dlt >= 128) { bytes.push((dlt & 127) | 128); dlt >>>= 7; } bytes.push(dlt);
+      const l = why.get(i); if (!li.has(l)) { li.set(l, labels.length); labels.push(l); } codes[k] = li.get(l);
+    });
+    blocks[nd.id] = { r: b64(Uint8Array.from(bytes)), c: b64(new Uint8Array(codes.buffer)) };
+  });
+  return { labels, blocks };
+}
+function unpackWhy(w) {
+  if (!w) return { why: null, labels: [] };
+  const why = {};
+  Object.entries(w.blocks || {}).forEach(([id, b]) => {
+    const by = unb64(b.r), rows = []; let prev = -1, v = 0, sh = 0;
+    for (const x of by) { v |= (x & 127) << sh; if (x & 128) { sh += 7; continue; } prev += v; rows.push(prev); v = 0; sh = 0; }
+    const cb = unb64(b.c); why[id] = { rows, codes: new Uint16Array(cb.buffer, cb.byteOffset, cb.byteLength >> 1) };
+  });
+  return { why, labels: w.labels || [] };
+}
 /* ---------- panel ---------- */
 let sel = null;
 function select(id) {
@@ -2125,6 +2308,7 @@ function dataBlock(id) {
   return wrap;
 }
 function updatePanelData() {
+  try { updateFlow(); } catch (e) { console.error(e); }
   const num = $("#tileNum"); if (!num || !sel) return;
   const id = sel, rows = RES[id].length, total = RES.root.length;
   if (DATA.shared && STALE.has(id)) {
@@ -2173,6 +2357,7 @@ function renderPanel() {
   panel.appendChild(head);
   if (n.d) panel.appendChild(el("p", "desc", n.d));
   if (editing) renderEditor(n, c); else renderView(n, c, path);
+  if (DATA && RES) panel.appendChild(flowSection());
   if (DATA && RES) panel.appendChild(dataBlock(sel));
   if (DATA && RES) updatePanelData();
 }
