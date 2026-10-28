@@ -1,6 +1,6 @@
 {
  "v": 2,
- "updated": "2026-10-28T09:09:56.227Z",
+ "updated": "2026-10-28T09:27:45.701Z",
  "cfg": {
   "root": {
    "c": [],
@@ -16,7 +16,8 @@
    "txt": [],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "dead": {
    "c": [
@@ -42,7 +43,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A": {
    "c": [
@@ -97,7 +99,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "B": {
    "c": [
@@ -128,7 +131,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A1": {
    "c": [
@@ -185,7 +189,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": []
+   "rets": [],
+   "ps": []
   },
   "A1s": {
    "c": [
@@ -212,10 +217,11 @@
     "Готово на подачу"
    ],
    "uname": "",
-   "links": [
+   "links": [],
+   "rets": null,
+   "ps": [
     "U5"
-   ],
-   "rets": null
+   ]
   },
   "A1c": {
    "c": [
@@ -244,7 +250,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A1r": {
    "c": [],
@@ -261,7 +268,8 @@
    "txt": [],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A1n": {
    "c": [
@@ -292,7 +300,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A1o": {
    "c": [
@@ -321,7 +330,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A1na": {
    "c": [
@@ -351,7 +361,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A1nb": {
    "c": [
@@ -382,7 +393,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A2": {
    "c": [
@@ -469,7 +481,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A2s": {
    "c": [
@@ -498,7 +511,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A2c": {
    "c": [
@@ -528,7 +542,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A2r": {
    "c": [],
@@ -545,7 +560,8 @@
    "txt": [],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A2n": {
    "c": [
@@ -574,7 +590,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A2o": {
    "c": [
@@ -612,7 +629,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A2na": {
    "c": [
@@ -636,7 +654,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "A2nb": {
    "c": [
@@ -666,7 +685,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "Bm": {
    "c": [
@@ -692,7 +712,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "Ba": {
    "c": [
@@ -718,7 +739,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "I": {
    "c": [
@@ -761,7 +783,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "Is": {
    "c": [],
@@ -783,7 +806,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "Ic": {
    "c": [
@@ -811,7 +835,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "Ir": {
    "c": [],
@@ -825,7 +850,8 @@
    "txt": null,
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "Iw": {
    "c": [
@@ -846,7 +872,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "In": {
    "c": [],
@@ -860,7 +887,8 @@
    "txt": null,
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "Io": {
    "c": [],
@@ -874,7 +902,8 @@
    "txt": null,
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "Ina": {
    "c": [],
@@ -891,7 +920,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "Inb": {
    "c": [
@@ -916,7 +946,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "__v": 2,
   "__par": {
@@ -951,7 +982,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "Bc": {
    "c": [
@@ -980,7 +1012,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "U1": {
    "c": [],
@@ -997,7 +1030,8 @@
    "txt": [],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "U2": {
    "c": [
@@ -1037,7 +1071,8 @@
    "links": [
     "Ic"
    ],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "U3": {
    "c": [],
@@ -1056,7 +1091,8 @@
    ],
    "uname": "Парсинг данных",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "U4": {
    "c": [
@@ -1080,7 +1116,8 @@
    ],
    "uname": "",
    "links": [],
-   "rets": null
+   "rets": null,
+   "ps": []
   },
   "U5": {
    "c": [
@@ -1104,7 +1141,8 @@
    "links": [],
    "rets": [
     "A2o"
-   ]
+   ],
+   "ps": []
   },
   "__nodes": [
    {
