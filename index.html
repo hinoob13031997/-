@@ -1613,6 +1613,7 @@ function parseRulesTable(wb) {
   const sn = wb.SheetNames.find(x => /^правила$/i.test(x.trim())) || wb.SheetNames.find(x => /правил/i.test(x) && !/как/i.test(x));
   if (!sn) throw new Error("в файле нет листа «Правила»");
   const arr = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" });
+  const par0 = Object.fromEntries(N.map(n => [n.id, n.p]));        /* родители до загрузки таблицы */
   const hi = arr.findIndex(r => r.some(v => cellS(v) === "Код блока"));
   if (hi < 0) throw new Error("не найден столбец «Код блока»");
   const head = arr[hi].map(v => cellS(v).toLowerCase());
@@ -1659,6 +1660,22 @@ function parseRulesTable(wb) {
     b.rets = I.rets < 0 ? null : (b.rets ? b.rets.split(/[;,]/).map(x => x.trim()).filter(Boolean).filter(x => { if (byId[x] && x !== code) return true; warns.push(code + ": «Пунктир» — нет блока «" + x + "»"); return false; }) : []);
     b.links = I.links < 0 ? null : (b.links ? b.links.split(/[;,]/).map(x => x.trim()).filter(Boolean).filter(x => { if (byId[x] && x !== code) return true; warns.push(code + ": «Доп. стрелки» — нет блока «" + x + "»"); return false; }) : []);
   });
+  /* родителя часто правят на листе «Блоки (справочник)» — учитываем и его, если на листе «Правила» родитель не менялся */
+  const rn = wb.SheetNames.find(x => /справочник/i.test(x) && /блок/i.test(x));
+  if (rn) {
+    const ra = XLSX.utils.sheet_to_json(wb.Sheets[rn], { header: 1, raw: true, defval: "" });
+    const rh = ra.findIndex(r => r.some(v => cellS(v) === "Код блока"));
+    if (rh >= 0) {
+      const hh = ra[rh].map(v => cellS(v).toLowerCase()), ic = hh.findIndex(h => h.startsWith("код блока")), ip = hh.findIndex(h => h.startsWith("родител"));
+      if (ic >= 0 && ip >= 0) ra.slice(rh + 1).forEach(r => {
+        const code = cellS(r[ic]), par = cellS(r[ip]);
+        if (!code || !par || !byId[code] || par === par0[code] || par === byId[code].p) return;
+        if (blocks[code] && blocks[code].parent && blocks[code].parent !== par0[code]) { warns.push(code + ": родитель на листах «Правила» и «Блоки (справочник)» разный — взят с листа «Правила»"); return; }
+        const err = setParent(code, par);
+        warns.push(code + (err ? ": родитель не изменён — " + err : ": родитель изменён на «" + par + "» (с листа «Блоки (справочник)»)"));
+      });
+    }
+  }
   const missing = N.filter(n => !blocks[n.id]).map(n => n.id);
   return { blocks, warns, missing, made };
 }
@@ -2146,6 +2163,7 @@ function renderView(n, c, path) {
     });
   } else body = el("p", "empty", kids(n.id).length ? "Собственных критериев нет. Они заданы у вложенных блоков." : "Критерии для этого блока не заданы.");
   const meta = [];
+  if (n.p && byId[n.p]) meta.push("Родитель (сплошная стрелка): «" + byId[n.p].t + "» (" + n.p + ")");
   if (c.from && byId[c.from]) meta.push("Берётся из блока «" + byId[c.from].t + "» (" + c.from + ")");
   if (c.sub && c.sub.length) meta.push("Минус блоки: " + c.sub.map(x => (byId[x] ? byId[x].t : x) + " (" + x + ")").join("; "));
   if (c.l === "or" && c.c.length > 1) meta.push("Критерии связаны через ИЛИ");
@@ -2225,6 +2243,20 @@ function renderEditor(n, c) {
   const nm = el("input"); nm.type = "text"; nm.value = c.uname || c.name || n.t0; nm.style.width = "100%"; nm.setAttribute("aria-label", "Название блока");
   nm.addEventListener("input", () => { c.uname = nm.value.trim(); n.t = c.uname || c.name || n.t0; changed(); });
   panel.appendChild(section("Название блока", nm));
+  if (n.id !== "root") {
+    const pbox = el("div", "ed");
+    const opts = N.filter(x => x.id !== n.id && !isUnder(x.id, n.id)).map(x => [x.id, x.t + " (" + x.id + ")"]);
+    const ps = selectEl(opts, n.p, "Родитель блока");
+    ps.addEventListener("change", () => {
+      const err = setParent(n.id, ps.value);
+      if (err) { setStatus("Родитель не изменён: " + err, 6000); ps.value = n.p; return; }
+      relayout(true); recalc(); changed(); renderPanel(); select(sel);
+      setStatus("Родитель изменён на «" + byId[n.p].t + "» (" + n.p + ")" + (c.from && byId[c.from] && c.from !== n.p ? ". Должники по-прежнему отбираются из «Брать из блока» = " + c.from : ""), 7000);
+    });
+    pbox.appendChild(ps);
+    pbox.appendChild(el("p", "hint", "От родителя идёт сплошная стрелка, и по умолчанию блок отбирает должников из него (если не задано «Брать из блока»). Смена родителя меняет подсчёт." + (!n.custom && n.p !== n.p0 && byId[n.p0] ? " В исходной схеме родитель — «" + byId[n.p0].t + "» (" + n.p0 + ")." : "")));
+    panel.appendChild(section("Родитель (сплошная стрелка)", pbox));
+  }
   if (!c.txt) c.txt = c.c.map(x => x.t);
   const cbox = el("div", "ed"), cwrap = el("div");
   const drawC = () => {
@@ -2247,20 +2279,6 @@ function renderEditor(n, c) {
   }
   panel.appendChild(section("Критерии блока", cbox));
 
-  if (n.id !== "root") {
-    const pbox = el("div", "ed");
-    const opts = N.filter(x => x.id !== n.id && !isUnder(x.id, n.id)).map(x => [x.id, x.t + " (" + x.id + ")"]);
-    const ps = selectEl(opts, n.p, "Родитель блока");
-    ps.addEventListener("change", () => {
-      const err = setParent(n.id, ps.value);
-      if (err) { setStatus("Родитель не изменён: " + err, 6000); ps.value = n.p; return; }
-      relayout(true); recalc(); changed(); renderPanel(); select(sel);
-      setStatus("Родитель изменён: блок теперь считается от «" + byId[n.p].t + "»" + (c.from && byId[c.from] ? " (но «Брать из блока» = " + c.from + ")" : ""), 7000);
-    });
-    pbox.appendChild(ps);
-    pbox.appendChild(el("p", "hint", "От родителя идёт сплошная стрелка, и по умолчанию блок отбирает должников из него (если не задано «Брать из блока»). Смена родителя меняет подсчёт." + (!n.custom && n.p !== n.p0 && byId[n.p0] ? " В исходной схеме родитель — «" + byId[n.p0].t + "» (" + n.p0 + ")." : "")));
-    panel.appendChild(section("Родитель (сплошная стрелка)", pbox));
-  }
   const arrowEditor = (key, title, addLabel, hint) => {
     const box = el("div", "ed");
     const draw = () => {
