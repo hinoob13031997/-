@@ -202,6 +202,8 @@ ul.crit li.q::before { background: var(--warn); border-radius: 50%; }
 .barmin .databar .fileinfo .colwarn { display: inline; margin: 0 0 0 6px; }
 .barmin .databar .status { flex: 0 1 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .barmin .databar .btn, .barmin .seg button { padding-top: 5px; padding-bottom: 5px; }
+.databar .btn, .seg button, .seg .seg-l, .amt span { white-space: nowrap; }
+.barmin .databar > .btn, .barmin .databar > label.btn, .barmin .seg, .barmin .amt { flex-shrink: 0; }
 .barmin .amt { min-height: 30px; }
 @media (max-width: 1020px) { .barmin .databar { flex-wrap: wrap; } }
 .databar .fileinfo { flex: 1 1 260px; min-width: 0; font-size: 13px; color: var(--muted); }
@@ -292,8 +294,8 @@ body { margin: 0; }
     <div class="fileinfo" id="fileinfo">Файл не загружен. Загрузите выгрузку (или перетащите сюда), и на блоках появится количество должников.</div>
     <div class="seg" id="oldSeg" role="group" aria-label="Должники">
       <span class="seg-l">Должники:</span>
-      <button type="button" class="on" data-v="all" aria-pressed="true">Все</button>
-      <button type="button" data-v="recent" aria-pressed="false" title="Скрыть должников, у которых дата смерти была больше 5 месяцев назад">Смерть ≤ 5 мес.</button>
+      <button type="button" data-v="old" aria-pressed="false" title="Только умершие больше 5 месяцев назад. Повторное нажатие снимает фильтр">Смерть &gt; 5 мес.</button>
+      <button type="button" data-v="recent" aria-pressed="false" title="Только умершие не больше 5 месяцев назад. Повторное нажатие снимает фильтр">Смерть ≤ 5 мес.</button>
     </div>
     <label class="amt" title="Должники с остатком долга + ГП меньше этой суммы скрываются на схеме"><span>Остаток долга + ГП, от</span><input id="minAmt" type="text" inputmode="numeric" placeholder="0" autocomplete="off" aria-label="Минимальная сумма, руб."><span>руб.</span></label>
     <select id="allMode" class="more" aria-label="Состав общего реестра" disabled>
@@ -1175,8 +1177,10 @@ function describeRule(r) {
   return r.col + " " + opLabel(op) + " " + (r.cmp ? "[" + r.cmp + "]" : (r.val || "…"));
 }
 
-let onlyRecent = false;
-try { onlyRecent = localStorage.getItem("funnel-recent") === "1"; } catch (e) {}
+/* фильтр по дате смерти: "" — все, "recent" — смерть не больше 5 мес. назад, "old" — больше 5 мес. назад.
+   Должники без даты смерти (не умершие) фильтром не отсекаются. */
+let deadMode = "";
+try { const v = localStorage.getItem("funnel-dead5"); deadMode = v === "recent" || v === "old" ? v : (localStorage.getItem("funnel-recent") === "1" ? "recent" : ""); } catch (e) {}
 /* строки, которые участвуют в воронке: при включённом тумблере скрыты должники, умершие больше 5 месяцев назад */
 const nRows = () => DATA.big ? DATA.n : DATA.rows.length;
 const AMT_COL = "Сумма долга + ГП Остаток", ID_COL = "ID договора внутренний", DEAD_COL = "Дата смерти";
@@ -1184,9 +1188,13 @@ let minAmt = 0;
 try { minAmt = Number(localStorage.getItem("funnel-minamt")) || 0; } catch (e) {}
 function visibleRows() {
   let all = Array.from({ length: nRows() }, (_, i) => i);
-  if (onlyRecent) {
+  if (deadMode) {
     const ci = colIdx("Дата смерти");
-    if (ci >= 0 && NORM[ci]) { const d = new Date(), thr = Date.UTC(d.getFullYear(), d.getMonth() - 5, d.getDate()), A = NORM[ci]; all = all.filter(i => !(typeof A[i] === "number" && A[i] < thr)); }
+    if (ci >= 0 && NORM[ci]) {
+      const d = new Date(), thr = Date.UTC(d.getFullYear(), d.getMonth() - 5, d.getDate()), A = NORM[ci];
+      all = deadMode === "recent" ? all.filter(i => !(typeof A[i] === "number" && A[i] < thr))      /* смерть ≤ 5 мес.: убираем умерших раньше */
+                                  : all.filter(i => !(typeof A[i] === "number" && A[i] >= thr));    /* смерть > 5 мес.: убираем умерших недавно */
+    }
   }
   if (minAmt > 0) {
     const ci = colIdx(AMT_COL);
@@ -1197,17 +1205,17 @@ function visibleRows() {
 function filterStatus() {
   if (!DATA || !RES) return;
   if (minAmt > 0 && colIdx(AMT_COL) < 0) { setStatus("В файле нет колонки «" + AMT_COL + "»", 5000); return; }
-  if (!onlyRecent && !(minAmt > 0)) { setStatus("Фильтры сняты: показаны все должники", 4000); return; }
-  const parts = []; if (onlyRecent) parts.push("смерть не позже 5 месяцев назад"); if (minAmt > 0) parts.push("остаток долга + ГП от " + nf.format(minAmt) + " ₽");
+  if (!deadMode && !(minAmt > 0)) { setStatus("Фильтры сняты: показаны все должники", 4000); return; }
+  const parts = []; if (deadMode) parts.push(deadMode === "recent" ? "смерть не больше 5 месяцев назад" : "смерть больше 5 месяцев назад"); if (minAmt > 0) parts.push("остаток долга + ГП от " + nf.format(minAmt) + " ₽");
   setStatus("Фильтры: " + parts.join(", ") + ". Показано " + nf.format(RES.root.length) + " из " + nf.format(nRows()), 6000);
 }
 function paintSeg() {
-  document.querySelectorAll("#oldSeg button").forEach(b => { const on = (b.dataset.v === "recent") === onlyRecent; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
+  document.querySelectorAll("#oldSeg button").forEach(b => { const on = b.dataset.v === deadMode; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
 }
 document.querySelectorAll("#oldSeg button").forEach(b => b.addEventListener("click", () => {
-  onlyRecent = b.dataset.v === "recent"; paintSeg();
-  try { localStorage.setItem("funnel-recent", onlyRecent ? "1" : "0"); } catch (e) {}
-  if (DATA) { recalc(); if (sel) select(sel); if (onlyRecent && colIdx("Дата смерти") < 0) setStatus("В файле нет колонки «Дата смерти»", 4000); else filterStatus(); }
+  deadMode = deadMode === b.dataset.v ? "" : b.dataset.v; paintSeg();          /* повторное нажатие — снова все */
+  try { localStorage.setItem("funnel-dead5", deadMode); } catch (e) {}
+  if (DATA) { recalc(); if (sel) select(sel); if (deadMode && colIdx("Дата смерти") < 0) setStatus("В файле нет колонки «Дата смерти»", 4000); else filterStatus(); }
 }));
 paintSeg();
 {
@@ -2361,7 +2369,7 @@ function updateFlow() {
   }
   if (fc.multi.length) body.appendChild(el("p", "hint", "Попали сразу в несколько вложенных блоков: " + nf.format(fc.multi.length) + " — условия веток пересекаются."));
   if (fc.other.length) body.appendChild(el("p", "hint", "Не из этого блока считаются: " + fc.other.map(k => "«" + k.t + "» (" + k.id + ") — от " + basesOf(k.id).join("; ")).join(", ") + "."));
-  body.appendChild(el("p", "hint", "Причина — первое условие, которое должник не прошёл в той ветке, где продвинулся дальше всего." + (onlyRecent || minAmt > 0 ? " С учётом фильтров." : "")));
+  body.appendChild(el("p", "hint", "Причина — первое условие, которое должник не прошёл в той ветке, где продвинулся дальше всего." + (deadMode || minAmt > 0 ? " С учётом фильтров." : "")));
   d.appendChild(body);
 }
 /* для публикации: причины по всем блокам без фильтров; строки — разности (varint), коды — Uint16 */
@@ -2443,7 +2451,7 @@ function updatePanelData() {
   const nd = byId[id].p && !OWN[id];
   num.textContent = nd ? "—" : nf.format(rows);
   const pct = total ? (rows / total * 100) : 0;
-  $("#tileSub").textContent = "из " + nf.format(total) + ((onlyRecent || minAmt > 0) ? " должников (с учётом фильтров, " : " строк файла (") + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (nd ? ". Для этого блока в файле нет данных. Задайте критерии в таблице правил, иначе число не считается." : "");
+  $("#tileSub").textContent = "из " + nf.format(total) + ((deadMode || minAmt > 0) ? " должников (с учётом фильтров, " : " строк файла (") + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (nd ? ". Для этого блока в файле нет данных. Задайте критерии в таблице правил, иначе число не считается." : "");
   $("#dlBlock").disabled = rows === 0 || !!nd;
   const pv = $("#prev"); pv.replaceChildren();
   if (!rows) { pv.appendChild(el("p", "empty", "В блоке нет строк.")); return; }
