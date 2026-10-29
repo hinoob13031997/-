@@ -1186,9 +1186,11 @@ const nRows = () => DATA.big ? DATA.n : DATA.rows.length;
 const AMT_COL = "Сумма долга + ГП Остаток", ID_COL = "ID договора внутренний", DEAD_COL = "Дата смерти";
 let minAmt = 0;
 try { minAmt = Number(localStorage.getItem("funnel-minamt")) || 0; } catch (e) {}
-function visibleRows() {
+/* noDeath: без фильтра по дате смерти — так считается «Все должники»: фильтр по смерти касается
+   только умерших и всего, что ниже, а общее число должников от него не меняется */
+function visibleRows(noDeath) {
   let all = Array.from({ length: nRows() }, (_, i) => i);
-  if (deadMode) {
+  if (deadMode && !noDeath) {
     const ci = colIdx("Дата смерти");
     if (ci >= 0 && NORM[ci]) {
       const d = new Date(), thr = Date.UTC(d.getFullYear(), d.getMonth() - 5, d.getDate()), A = NORM[ci];
@@ -1207,7 +1209,7 @@ function filterStatus() {
   if (minAmt > 0 && colIdx(AMT_COL) < 0) { setStatus("В файле нет колонки «" + AMT_COL + "»", 5000); return; }
   if (!deadMode && !(minAmt > 0)) { setStatus("Фильтры сняты: показаны все должники", 4000); return; }
   const parts = []; if (deadMode) parts.push(deadMode === "recent" ? "смерть не больше 5 месяцев назад" : "смерть больше 5 месяцев назад"); if (minAmt > 0) parts.push("остаток долга + ГП от " + nf.format(minAmt) + " ₽");
-  setStatus("Фильтры: " + parts.join(", ") + ". Показано " + nf.format(RES.root.length) + " из " + nf.format(nRows()), 6000);
+  setStatus("Фильтры: " + parts.join(", ") + (deadMode && RES.dead ? ". Умерших показано " + nf.format(RES.dead.length) : ". Показано " + nf.format(RES.root.length) + " из " + nf.format(nRows())), 6000);
 }
 function paintSeg() {
   document.querySelectorAll("#oldSeg button").forEach(b => { const on = b.dataset.v === deadMode; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
@@ -1282,6 +1284,7 @@ function recalc() {
   else {
     if (bigMissing() && !bigBusy) { setStatus("Подгружаю колонку из файла…"); bigLoad(DATA.f, DATA.sheet, DATA.ctx); return; }
     const r = computeSets(visibleRows()); RES = r.res; OWN = r.own;
+    if (deadMode) RES.root = visibleRows(true);
   }
   N.forEach(n => refreshNode(n.id));
   updatePanelData();
@@ -2053,6 +2056,11 @@ function sharedRecalc() {
     if (!memo.has(bits)) { const out = []; for (let i = 0; i < n; i++) if (mask[i] && (bits[i >> 3] & (1 << (i & 7)))) out.push(i); memo.set(bits, out); }
     RES[nd.id] = memo.get(bits);
   });
+  if (deadMode && RES.root && !STALE.has("root")) {
+    const m2 = new Uint8Array(n); visibleRows(true).forEach(i => { m2[i] = 1; });
+    const bits = SH.sets.root, out = []; for (let i = 0; i < n; i++) if (m2[i] && (!bits || (bits[i >> 3] & (1 << (i & 7))))) out.push(i);
+    RES.root = out;
+  }
 }
 function buildShared() {
   const n = nRows(), all = Array.from({ length: n }, (_, i) => i);
@@ -2290,9 +2298,11 @@ function flowCounts(id) {
   const inB = new Uint8Array(n), hit = new Uint8Array(n);
   base.forEach(i => { inB[i] = 1; });
   const per = ks.map(k => { let c = 0; (RES[k.id] || []).forEach(i => { if (inB[i]) { c++; if (hit[i] < 255) hit[i]++; } }); return { k, c }; });
+  let hidden = 0, dm = null;
+  if (deadMode && id === "root") { dm = new Uint8Array(n); visibleRows().forEach(i => { dm[i] = 1; }); }
   const lost = [], multi = [];
-  base.forEach(i => { if (!hit[i]) lost.push(i); else if (hit[i] > 1) multi.push(i); });
-  return { base, per, lost, multi, other: kids(id).filter(k => !ks.includes(k)) };
+  base.forEach(i => { if (!hit[i]) { if (dm && !dm[i]) hidden++; else lost.push(i); } else if (hit[i] > 1) multi.push(i); });
+  return { base, per, lost, multi, hidden, other: kids(id).filter(k => !ks.includes(k)) };
 }
 /* Причины считаются по блокам без фильтров — так же, как в опубликованных данных; фильтр только сужает список */
 let ALLSETS = null;
@@ -2367,6 +2377,7 @@ function updateFlow() {
     });
     body.appendChild(rs);
   }
+  if (fc.hidden) body.appendChild(el("p", "hint", "Скрыты фильтром «" + (deadMode === "old" ? "Смерть > 5 мес." : "Смерть ≤ 5 мес.") + "»: " + nf.format(fc.hidden) + " умерших."));
   if (fc.multi.length) body.appendChild(el("p", "hint", "Попали сразу в несколько вложенных блоков: " + nf.format(fc.multi.length) + " — условия веток пересекаются."));
   if (fc.other.length) body.appendChild(el("p", "hint", "Не из этого блока считаются: " + fc.other.map(k => "«" + k.t + "» (" + k.id + ") — от " + basesOf(k.id).join("; ")).join(", ") + "."));
   body.appendChild(el("p", "hint", "Причина — первое условие, которое должник не прошёл в той ветке, где продвинулся дальше всего." + (deadMode || minAmt > 0 ? " С учётом фильтров." : "")));
