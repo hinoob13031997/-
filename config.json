@@ -1,6 +1,6 @@
 {
  "v": 2,
- "updated": "2026-10-29T10:46:35.229Z",
+ "updated": "2026-10-29T10:46:59.328Z",
  "cfg": {
   "root": {
    "c": [],
@@ -920,7 +920,7 @@
    "from": "",
    "sub": [],
    "name": "",
-   "txt": null,
+   "txt": [],
    "uname": "",
    "pos": null,
    "links": [],
@@ -936,7 +936,7 @@
    "from": "",
    "sub": [],
    "name": "",
-   "txt": null,
+   "txt": [],
    "uname": "",
    "pos": null,
    "links": [],
