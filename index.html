@@ -267,8 +267,8 @@ h1 { font-size: clamp(20px, 2.4vw, 32px); letter-spacing: -.035em; }
 .databar .filter-field:hover, .databar .filter-field:focus-within { border-color: var(--accent); }
 .databar .filter-field.is-active { background: var(--accent-soft); border-color: var(--accent); }
 .databar select.filter-field { display: block; cursor: pointer; }
-.filter-field input { width: 6.5ch; font: inherit; color: inherit; background: transparent; border: 0; padding: 0; text-align: right; }
-.filter-field input:focus { outline: none; }
+#minAmt { width: var(--amount-width, 6.5ch); font: inherit; font-variant-numeric: tabular-nums; color: inherit; background: transparent; border: 0; padding: 0; text-align: right; }
+#minAmt:focus { outline: none; }
 #cessionMenu summary { list-style: none; cursor: pointer; }
 #cessionMenu summary::after { content: "▾"; color: var(--muted); }
 #cessionMenu summary::-webkit-details-marker { display: none; }
@@ -326,9 +326,9 @@ dialog .dialog-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-conte
         <option value="old">Смерть: больше 5 мес.</option>
         <option value="recent">Смерть: до 5 мес. включительно</option>
       </select>
-      <label class="filter-field" id="amountFilter" title="Минимальный остаток долга с госпошлиной">
-        <span>Остаток долга + ГП, от</span>
-        <input id="minAmt" type="text" inputmode="numeric" placeholder="0" autocomplete="off" aria-label="Минимальный остаток долга с госпошлиной, в рублях">
+      <label class="filter-field" id="amountFilter" title="Минимальная сумма долга">
+        <span>Сумма долга, от</span>
+        <input id="minAmt" type="text" inputmode="numeric" placeholder="0" autocomplete="off" aria-label="Минимальная сумма долга, в рублях">
         <span>₽</span>
       </label>
       <details id="cessionMenu" hidden>
@@ -1343,7 +1343,7 @@ function filterStatus() {
   if (!DATA || !RES) return;
   if (minAmt > 0 && colIdx(AMT_COL) < 0) { setStatus("В файле нет колонки «" + AMT_COL + "»", 5000); return; }
   if (!deadMode && !(minAmt > 0) && !selectedCessions.size) { setStatus("Фильтры сняты: показаны все должники", 4000); return; }
-  const parts = []; if (deadMode) parts.push(deadMode === "recent" ? "смерть не больше 5 месяцев назад" : "смерть больше 5 месяцев назад"); if (minAmt > 0) parts.push("остаток долга + ГП от " + nf.format(minAmt) + " ₽");
+  const parts = []; if (deadMode) parts.push(deadMode === "recent" ? "смерть не больше 5 месяцев назад" : "смерть больше 5 месяцев назад"); if (minAmt > 0) parts.push("сумма долга от " + nf.format(minAmt) + " ₽");
   if (selectedCessions.size) parts.push("цессий выбрано " + selectedCessions.size);
   setStatus("Фильтры: " + parts.join(", ") + (deadMode && RES.dead ? ". Умерших показано " + nf.format(RES.dead.length) : ". Показано " + nf.format(RES.root.length) + " из " + nf.format(nRows())), 6000);
 }
@@ -1364,20 +1364,28 @@ function filterStatus() {
 }
 {
   const inp = $("#minAmt"), field = $("#amountFilter");
-  if (minAmt > 0) inp.value = nf.format(minAmt);
+  const resize = () => inp.style.setProperty("--amount-width", Math.max(6.5, inp.value.length + 1.5) + "ch");
+  const format = () => { inp.value = minAmt > 0 ? nf.format(minAmt) : ""; resize(); };
+  format();
   field.classList.toggle("is-active", minAmt > 0);
-  let tm;
+  let tm = null;
+  const applyAmount = () => {
+    tm = null;
+    const v = Number(inp.value.replace(/[\s\u00a0]/g, "").replace(",", "."));
+    minAmt = Number.isFinite(v) && v > 0 ? v : 0;
+    field.classList.toggle("is-active", minAmt > 0);
+    try { localStorage.setItem("funnel-minamt", String(minAmt)); } catch (e) {}
+    if (DATA) { recalc(); if (sel) select(sel); filterStatus(); }
+  };
   inp.addEventListener("input", () => {
+    resize();
     clearTimeout(tm);
-    tm = setTimeout(() => {
-      const v = Number(String(inp.value).replace(/[\s\u00a0]/g, "").replace(",", "."));
-      minAmt = isFinite(v) && v > 0 ? v : 0;
-      field.classList.toggle("is-active", minAmt > 0);
-      try { localStorage.setItem("funnel-minamt", String(minAmt)); } catch (e) {}
-      if (DATA) { recalc(); if (sel) select(sel); filterStatus(); }
-    }, 450);
+    tm = setTimeout(applyAmount, 450);
   });
-  inp.addEventListener("blur", () => { inp.value = minAmt > 0 ? nf.format(minAmt) : ""; });
+  inp.addEventListener("blur", () => {
+    if (tm !== null) { clearTimeout(tm); applyAmount(); }
+    format();
+  });
 }
 /* расчёт блоков по правилам; base — строки, с которых начинается воронка */
 function computeSets(base) {
