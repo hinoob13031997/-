@@ -1,6 +1,6 @@
 {
  "v": 2,
- "updated": "2026-11-18T09:19:37.139Z",
+ "updated": "2026-11-18T13:13:31.306Z",
  "cfg": {
   "root": {
    "c": [],
@@ -18,7 +18,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "dead": {
    "c": [
@@ -46,7 +47,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "A": {
    "c": [
@@ -90,7 +92,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "B": {
    "c": [
@@ -135,7 +138,8 @@
     "U10"
    ],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "A1": {
    "c": [
@@ -189,7 +193,8 @@
     "A2o"
    ],
    "ps": [],
-   "color": "cyan"
+   "color": "cyan",
+   "titleWeight": ""
   },
   "A1s": {
    "c": [
@@ -224,7 +229,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "yellow"
+   "color": "yellow",
+   "titleWeight": "600"
   },
   "A1c": {
    "c": [
@@ -257,7 +263,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "A1r": {
    "c": [],
@@ -276,7 +283,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "A1n": {
    "c": [
@@ -314,7 +322,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "red"
+   "color": "red",
+   "titleWeight": ""
   },
   "A1o": {
    "c": [
@@ -345,7 +354,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "green"
+   "color": "green",
+   "titleWeight": ""
   },
   "A1na": {
    "c": [
@@ -377,7 +387,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "red"
+   "color": "red",
+   "titleWeight": ""
   },
   "A1nb": {
    "c": [
@@ -410,7 +421,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "A2": {
    "c": [
@@ -444,7 +456,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "cyan"
+   "color": "cyan",
+   "titleWeight": ""
   },
   "A2s": {
    "c": [
@@ -484,7 +497,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "yellow"
+   "color": "yellow",
+   "titleWeight": ""
   },
   "A2c": {
    "c": [
@@ -518,7 +532,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "A2r": {
    "c": [],
@@ -537,7 +552,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "A2n": {
    "c": [
@@ -572,7 +588,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "red"
+   "color": "red",
+   "titleWeight": ""
   },
   "A2o": {
    "c": [
@@ -616,7 +633,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "A2na": {
    "c": [
@@ -644,7 +662,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "red"
+   "color": "red",
+   "titleWeight": ""
   },
   "A2nb": {
    "c": [
@@ -676,7 +695,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "Bm": {
    "c": [
@@ -712,7 +732,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "red"
+   "color": "red",
+   "titleWeight": ""
   },
   "Ba": {
    "c": [
@@ -743,7 +764,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "cyan"
+   "color": "cyan",
+   "titleWeight": ""
   },
   "I": {
    "c": [
@@ -764,23 +786,24 @@
     "Ic"
    ],
    "name": "Иск к наследникам/наследственной массе.",
+   "pos": {
+    "x": 1020,
+    "y": 360
+   },
    "txt": [
     "Наличие КД",
     "Наличие имущества (обогащение или залог)",
     "Сумма по АПП ≥ 100 000 руб."
    ],
    "uname": "Иск к наследникам/наследственной массе.",
-   "pos": {
-    "x": 1020,
-    "y": 360
-   },
    "links": [],
    "rets": [
     "U1",
     "U15"
    ],
    "ps": [],
-   "color": "cyan"
+   "color": "cyan",
+   "titleWeight": ""
   },
   "Is": {
    "c": [],
@@ -810,7 +833,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "yellow"
+   "color": "yellow",
+   "titleWeight": ""
   },
   "Ic": {
    "c": [
@@ -845,7 +869,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "Ir": {
    "c": [],
@@ -864,7 +889,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "Iw": {
    "c": [
@@ -890,7 +916,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "In": {
    "c": [],
@@ -911,7 +938,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "red"
+   "color": "red",
+   "titleWeight": ""
   },
   "Io": {
    "c": [],
@@ -932,7 +960,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "Ina": {
    "c": [],
@@ -954,7 +983,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "red"
+   "color": "red",
+   "titleWeight": ""
   },
   "Inb": {
    "c": [
@@ -984,7 +1014,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "__v": 2,
   "__par": {},
@@ -1020,7 +1051,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": ""
+   "color": "",
+   "titleWeight": ""
   },
   "Bc": {
    "c": [
@@ -1056,7 +1088,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "yellow"
+   "color": "yellow",
+   "titleWeight": ""
   },
   "U1": {
    "c": [
@@ -1083,7 +1116,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "yellow"
+   "color": "yellow",
+   "titleWeight": ""
   },
   "U2": {
    "c": [
@@ -1126,7 +1160,8 @@
     "Ic"
    ],
    "ps": [],
-   "color": "pink"
+   "color": "pink",
+   "titleWeight": ""
   },
   "U5": {
    "c": [],
@@ -1148,7 +1183,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "yellow"
+   "color": "yellow",
+   "titleWeight": ""
   },
   "U6": {
    "c": [
@@ -1193,7 +1229,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "yellow"
+   "color": "yellow",
+   "titleWeight": ""
   },
   "U4": {
    "c": [
@@ -1240,7 +1277,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "yellow"
+   "color": "yellow",
+   "titleWeight": ""
   },
   "U3": {
    "c": [
@@ -1275,7 +1313,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "red"
+   "color": "red",
+   "titleWeight": ""
   },
   "U7": {
    "c": [
@@ -1331,7 +1370,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "yellow"
+   "color": "yellow",
+   "titleWeight": ""
   },
   "U8": {
    "c": [
@@ -1366,7 +1406,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "orange"
+   "color": "orange",
+   "titleWeight": ""
   },
   "U9": {
    "c": [
@@ -1408,7 +1449,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "yellow"
+   "color": "yellow",
+   "titleWeight": ""
   },
   "U10": {
    "c": [
@@ -1444,7 +1486,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "yellow"
+   "color": "yellow",
+   "titleWeight": ""
   },
   "U11": {
    "c": [
@@ -1479,7 +1522,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "red"
+   "color": "red",
+   "titleWeight": ""
   },
   "U12": {
    "c": [
@@ -1510,7 +1554,8 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "red"
+   "color": "red",
+   "titleWeight": ""
   },
   "U13": {
    "c": [
@@ -1544,7 +1589,113 @@
    "links": [],
    "rets": [],
    "ps": [],
-   "color": "red"
+   "color": "red",
+   "titleWeight": ""
+  },
+  "U14": {
+   "c": [
+    {
+     "t": "Срок окончания КД больше 3 лет назад",
+     "r": {
+      "col": "Срок займа, дата",
+      "op": "older",
+      "val": "3",
+      "cmp": ""
+     }
+    }
+   ],
+   "q": [],
+   "n": "",
+   "l": "",
+   "from": "C",
+   "sub": [
+    "A1c",
+    "A2c",
+    "Ic",
+    "A1o"
+   ],
+   "name": "",
+   "pos": {
+    "x": 1490,
+    "y": 260
+   },
+   "txt": [],
+   "uname": "",
+   "links": [],
+   "rets": [],
+   "ps": [],
+   "color": "red",
+   "titleWeight": ""
+  },
+  "U15": {
+   "c": [
+    {
+     "t": "Срок окончания КД меньше 3 лет назад",
+     "r": {
+      "col": "Срок займа, дата",
+      "op": "newer",
+      "val": "3",
+      "cmp": ""
+     }
+    }
+   ],
+   "q": [],
+   "n": "",
+   "l": "",
+   "from": "C",
+   "sub": [
+    "A1c",
+    "A2c",
+    "Ic",
+    "A1o"
+   ],
+   "name": "",
+   "pos": {
+    "x": 1700,
+    "y": 260
+   },
+   "txt": [],
+   "uname": "",
+   "links": [],
+   "rets": [],
+   "ps": [],
+   "color": "cyan",
+   "titleWeight": ""
+  },
+  "U16": {
+   "c": [
+    {
+     "t": "Нет даты окончания займа",
+     "r": {
+      "col": "Срок займа, дата",
+      "op": "empty",
+      "val": "",
+      "cmp": ""
+     }
+    }
+   ],
+   "q": [],
+   "n": "",
+   "l": "",
+   "from": "C",
+   "sub": [
+    "A1c",
+    "A2c",
+    "Ic",
+    "A1o"
+   ],
+   "name": "",
+   "pos": {
+    "x": 1900,
+    "y": 260
+   },
+   "txt": [],
+   "uname": "",
+   "links": [],
+   "rets": [],
+   "ps": [],
+   "color": "yellow",
+   "titleWeight": ""
   },
   "__nodes": [
    {
@@ -1673,108 +1824,6 @@
     "k": "stage",
     "w": 170
    }
-  ],
-  "U14": {
-   "c": [
-    {
-     "t": "Срок окончания КД больше 3 лет назад",
-     "r": {
-      "col": "Срок займа, дата",
-      "op": "older",
-      "val": "3",
-      "cmp": ""
-     }
-    }
-   ],
-   "q": [],
-   "n": "",
-   "l": "",
-   "from": "C",
-   "sub": [
-    "A1c",
-    "A2c",
-    "Ic",
-    "A1o"
-   ],
-   "name": "",
-   "txt": [],
-   "uname": "",
-   "pos": {
-    "x": 1490,
-    "y": 260
-   },
-   "links": [],
-   "rets": [],
-   "ps": [],
-   "color": "red"
-  },
-  "U15": {
-   "c": [
-    {
-     "t": "Срок окончания КД меньше 3 лет назад",
-     "r": {
-      "col": "Срок займа, дата",
-      "op": "newer",
-      "val": "3",
-      "cmp": ""
-     }
-    }
-   ],
-   "q": [],
-   "n": "",
-   "l": "",
-   "from": "C",
-   "sub": [
-    "A1c",
-    "A2c",
-    "Ic",
-    "A1o"
-   ],
-   "name": "",
-   "txt": [],
-   "uname": "",
-   "pos": {
-    "x": 1700,
-    "y": 260
-   },
-   "links": [],
-   "rets": [],
-   "ps": [],
-   "color": "cyan"
-  },
-  "U16": {
-   "c": [
-    {
-     "t": "Нет даты окончания займа",
-     "r": {
-      "col": "Срок займа, дата",
-      "op": "empty",
-      "val": "",
-      "cmp": ""
-     }
-    }
-   ],
-   "q": [],
-   "n": "",
-   "l": "",
-   "from": "C",
-   "sub": [
-    "A1c",
-    "A2c",
-    "Ic",
-    "A1o"
-   ],
-   "name": "",
-   "txt": [],
-   "uname": "",
-   "pos": {
-    "x": 1900,
-    "y": 260
-   },
-   "links": [],
-   "rets": [],
-   "ps": [],
-   "color": "yellow"
-  }
+  ]
  }
 }
