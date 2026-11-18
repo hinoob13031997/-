@@ -4,43 +4,40 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Воронка умерших должников</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: схема воронки слева (масштабируется, скроллится), панель критериев справа; на узком экране панель под схемой. */
 :root {
-  --bg: #f3f6f8;
+  --bg: #f5f5f7;
   --surface: #ffffff;
-  --fg: #14232c;
-  --muted: #5b6b75;
-  --line: #c9d5dc;
+  --fg: #1d1d1f;
+  --muted: #626268;
+  --line: #d9d9df;
   --edge: #6f8794;
-  --accent: #14607f;
-  --accent-soft: #dcecf3;
+  --accent: #0066cc;
+  --accent-soft: #e7f1ff;
   --sel: #d90f1b;
   --sel-halo: #f8c9cc;
-  --head-bg: #14607f;
+  --head-bg: #0066cc;
   --head-fg: #ffffff;
-  --group-bg: #dbe6ec;
+  --group-bg: #e8effa;
   --group-fg: #14323f;
   --ok-bg: #dff1dd;
   --ok-line: #6fae6a;
   --warn: #b7650a;
   --warn-bg: #fdf0dc;
-  --font-body: "Golos Text", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f1a20; --surface: #17262e; --fg: #e5eef2; --muted: #93a7b2; --line: #2c414c;
+    --bg: #161618; --surface: #242426; --fg: #f5f5f7; --muted: #93a7b2; --line: #414145;
     --edge: #6d8896; --accent: #5cb6d9; --accent-soft: #1d3a47; --head-bg: #1d6f92; --head-fg: #ffffff;
     --group-bg: #23394499; --group-fg: #d4e4ec; --ok-bg: #20392a; --ok-line: #4f8f56;
     --warn: #f0b05a; --warn-bg: #3a2c15; --sel: #ff4d55; --sel-halo: #5a1d22; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0f1a20; --surface: #17262e; --fg: #e5eef2; --muted: #93a7b2; --line: #2c414c;
+  --bg: #161618; --surface: #242426; --fg: #f5f5f7; --muted: #93a7b2; --line: #414145;
   --edge: #6d8896; --accent: #5cb6d9; --accent-soft: #1d3a47; --head-bg: #1d6f92; --head-fg: #ffffff;
   --group-bg: #23394499; --group-fg: #d4e4ec; --ok-bg: #20392a; --ok-line: #4f8f56;
   --warn: #f0b05a; --warn-bg: #3a2c15; --sel: #ff4d55; --sel-halo: #5a1d22; color-scheme: dark;
@@ -261,6 +258,41 @@ ul.crit li.q::before { background: var(--warn); border-radius: 50%; }
 .hint { font-size: 12px; color: var(--muted); margin: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 body { margin: 0; }
+/* Панель просмотра и диалоги реестров */
+body { margin: 0; }
+h1 { font-size: clamp(20px, 2.4vw, 32px); letter-spacing: -.035em; }
+.board, aside, .databar { border-radius: 18px; box-shadow: 0 4px 18px rgb(0 0 0 / .04); }
+.board { overflow: hidden; background: var(--bg); }
+.node { border-radius: 12px; box-shadow: 0 2px 6px rgb(0 0 0 / .07); }
+.btn, .zoom { border-radius: 10px; }
+.barmin .databar { flex-wrap: wrap; }
+.barmin .databar .fileinfo { flex-basis: 260px; }
+#viewport { cursor: grab; }
+#viewport.is-panning, #viewport.is-panning .node { cursor: grabbing; user-select: none; }
+#loading { flex: 1 0 100%; display: flex; align-items: center; gap: 12px; color: #bc1022; font-weight: 600; }
+#loading[hidden] { display: none; }
+#loading progress { width: min(180px, 30%); accent-color: #e12439; }
+@media (prefers-color-scheme: dark) { #loading { color: #ff838b; } }
+#cessionMenu { position: relative; }
+#cessionMenu summary { list-style: none; }
+#cessionMenu summary::-webkit-details-marker { display: none; }
+#cessionMenu .popover { position: absolute; z-index: 3; top: calc(100% + 8px); inset-inline-end: 0; width: min(320px, 82vw); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px; box-shadow: 0 12px 32px rgb(0 0 0 / .14); }
+#cessionOptions { max-height: 220px; overflow: auto; margin: 8px 0; }
+#cessionOptions label { display: flex; gap: 6px; padding: 5px 0; overflow-wrap: anywhere; }
+#cessionOptions input { align-self: start; }
+#cessionSearch { width: 100%; padding: 6px; font: inherit; }
+dialog { max-width: calc(100vw - 24px); width: 520px; max-height: 85vh; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 18px; padding: 20px; }
+dialog::backdrop { background: rgb(0 0 0 / .32); }
+dialog h2 { margin: 0 0 12px; }
+dialog .dialog-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+#comparison { width: 940px; }
+#comparison table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+#comparison td, #comparison th { padding: 6px; border-bottom: 1px solid var(--line); text-align: right; }
+#comparison td:first-child, #comparison th:first-child { text-align: left; }
+#comparison .details-line { overflow-wrap: anywhere; }
+#comparison .details-line p { margin: 5px 0; }
+.node .delta { position: absolute; top: -11px; right: 6px; padding: 1px 5px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--accent); font-size: 11px; font-weight: 700; }
+#comparison .table-scroll { overflow: auto; max-height: 50vh; margin-bottom: 12px; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
@@ -288,7 +320,7 @@ body { margin: 0; }
     <button class="btn" id="barBtn" type="button" aria-expanded="true" title="Показать или скрыть остальные действия">Свернуть ▴</button>
     <label class="btn primary" for="file" style="cursor:pointer">Загрузить Excel</label>
     <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv" hidden>
-    <label class="btn more" for="rulesFile" style="cursor:pointer" title="Таблица с критериями отбора по блокам">Загрузить таблицу правил</label>
+    <label class="btn more" for="rulesFile" data-edit-only style="cursor:pointer" title="Таблица с критериями отбора по блокам">Загрузить таблицу правил</label>
     <input type="file" id="rulesFile" accept=".xlsx,.xls" hidden>
     <select id="sheetSel" aria-label="Лист" hidden></select>
     <div class="fileinfo" id="fileinfo">Файл не загружен. Загрузите выгрузку (или перетащите сюда), и на блоках появится количество должников.</div>
@@ -298,21 +330,47 @@ body { margin: 0; }
       <button type="button" data-v="recent" aria-pressed="false" title="Только умершие не больше 5 месяцев назад. Повторное нажатие снимает фильтр">Смерть ≤ 5 мес.</button>
     </div>
     <label class="amt" title="Должники с остатком долга + ГП меньше этой суммы скрываются на схеме"><span>Остаток долга + ГП, от</span><input id="minAmt" type="text" inputmode="numeric" placeholder="0" autocomplete="off" aria-label="Минимальная сумма, руб."><span>руб.</span></label>
-    <select id="allMode" class="more" aria-label="Состав общего реестра" disabled>
-      <option value="all">Общий реестр: все блоки с критериями</option>
-      <option value="deep">Общий реестр: каждая строка в самом глубоком блоке</option>
-    </select>
-    <button class="btn more" id="allBtn" disabled>Скачать общий реестр</button>
+    <details id="cessionMenu" hidden>
+      <summary class="btn" id="cessionLabel">Цессии: все</summary>
+      <div class="popover">
+        <input type="search" id="cessionSearch" placeholder="Найти цессию" aria-label="Поиск по наименованию цессии">
+        <div id="cessionOptions"></div>
+        <button type="button" class="btn" id="cessionClear">Сбросить</button>
+      </div>
+    </details>
+    <button class="btn" id="allBtn" disabled>Скачать общий реестр</button>
+    <button class="btn" id="compareBtn" hidden>Сравнить с предыдущей</button>
     <button class="btn more" id="idsBtn" disabled title="Проверить список ID долгов: в каком блоке воронки каждый из них">Проверить список ID</button>
     <button class="btn primary" id="pubBtn" hidden title="Сохранить посчитанную воронку, чтобы коллеги увидели её без загрузки файла">Опубликовать для всех</button>
     <button class="btn" id="sharedBtn" hidden title="Показать данные, которые опубликовал коллега">Общие данные</button>
-    <button class="btn more" id="addBlk" title="Добавить новый блок на схему">Добавить блок</button>
+    <button class="btn more" id="addBlk" data-edit-only title="Добавить новый блок на схему">Добавить блок</button>
     <button class="btn more" id="dlRules" title="Скачать таблицу правил с текущими блоками и критериями">Скачать таблицу правил</button>
-    <button class="btn more" id="restoreDel" hidden title="Вернуть на схему удалённые блоки исходной схемы">Вернуть удалённые блоки</button>
-    <button class="btn more" id="resetPos" hidden title="Вернуть все блоки на места, заданные схемой">Вернуть блоки на места</button>
+    <button class="btn more" id="restoreDel" data-edit-only hidden title="Вернуть на схему удалённые блоки исходной схемы">Вернуть удалённые блоки</button>
     <span class="status" id="status" role="status"></span>
+    <div id="loading" hidden role="status"><progress aria-label="Ход загрузки"></progress><span></span></div>
     <div class="rulesinfo more" id="rulesInfo" hidden></div>
   </div>
+
+  <dialog id="registryDialog" aria-labelledby="registryTitle">
+    <form method="dialog">
+      <h2 id="registryTitle">Скачать общий реестр</h2>
+      <label for="allMode">Какие строки включить</label>
+      <select id="allMode">
+        <option value="all">Все совпадения по блокам</option>
+        <option value="deep">Последний блок в каждой ветке</option>
+      </select>
+      <p id="registryHint"></p>
+      <div class="dialog-actions">
+        <button class="btn" value="cancel">Отмена</button>
+        <button class="btn primary" value="download">Скачать</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="comparison" aria-labelledby="comparisonTitle">
+    <h2 id="comparisonTitle">Изменения между загрузками</h2>
+    <div id="comparisonBody"></div>
+    <form method="dialog" class="dialog-actions"><button class="btn">Закрыть</button></form>
+  </dialog>
 
   <div class="legend">
     <span><i class="lg-root"></i>Исходная группа</span>
@@ -554,9 +612,10 @@ function placeAll() {
   W = Math.max(W0, ...N.map(n => n.x + n.w / 2 + 40));
   H = Math.max(H0, ...N.map(n => n.y + NH + 40));
 }
+const TITLE_WEIGHTS = [["", "По умолчанию"], ["300", "Тонкий · 300"], ["400", "Обычный · 400"], ["500", "Средний · 500"], ["600", "Полужирный · 600"], ["700", "Жирный · 700"], ["800", "Очень жирный · 800"]];
 const defCfg = n => {
   const d = DEFTBL[n.id] || { rows: n.c.map(t => ({ t, r: null })) };
-  return { c: d.rows.map(x => ({ t: x.t, r: x.r ? Object.assign({}, x.r) : null })), q: n.q.slice(), n: n.n || "", l: d.l || "", from: d.from || "", sub: (d.sub || []).slice(), name: "", pos: null, links: [], rets: null, ps: [], color: "" };
+  return { c: d.rows.map(x => ({ t: x.t, r: x.r ? Object.assign({}, x.r) : null })), q: n.q.slice(), n: n.n || "", l: d.l || "", from: d.from || "", sub: (d.sub || []).slice(), name: "", pos: null, links: [], rets: null, ps: [], color: "", titleWeight: "" };
 };
 const cfg = Object.fromEntries(N.map(n => [n.id, defCfg(n)]));
 cfg.__v = 2;
@@ -567,6 +626,13 @@ let editing = false;
 
 const statusEl = $("#status");
 let statusTimer = null;
+function loadProgress(message, percent) {
+  const box = $("#loading"), bar = box.querySelector("progress");
+  box.hidden = !message;
+  box.querySelector("span").textContent = message || "";
+  if (percent == null) bar.removeAttribute("value");
+  else { bar.max = 100; bar.value = percent; }
+}
 function setStatus(t, ms) { statusEl.textContent = t; clearTimeout(statusTimer); if (ms) statusTimer = setTimeout(() => statusEl.textContent = "", ms); }
 
 let DB = null, DL = null;
@@ -625,7 +691,8 @@ function applySaved(obj) {
         links: Array.isArray(s.links) ? s.links.map(String) : [],
         rets: Array.isArray(s.rets) ? s.rets.map(String) : null,
         ps: Array.isArray(s.ps) ? s.ps.map(String) : [],
-        color: typeof s.color === "string" && fillKey(s.color) ? fillKey(s.color) : ""
+        color: typeof s.color === "string" && fillKey(s.color) ? fillKey(s.color) : "",
+        titleWeight: TITLE_WEIGHTS.some(([weight]) => weight === s.titleWeight) ? s.titleWeight : ""
       };
     } else cfg[n.id] = Object.assign({}, d, { q, n: nt, pos: s.pos && typeof s.pos.x === "number" ? { x: s.pos.x, y: s.pos.y } : null, links: [] });
     n.t = cfg[n.id].uname || cfg[n.id].name || n.t0;
@@ -719,6 +786,7 @@ async function pullConfig() {
   cfgSha = r.sha; applySaved(r.json.cfg); repaintAll();
 }
 function updateAuthBtn() {
+  paintSharedBtns();
   const b = $("#authBtn"); b.hidden = !REMOTE;
   b.textContent = TOKEN ? "Режим правки · Выйти" : "Войти для правки";
 }
@@ -812,7 +880,8 @@ async function initRemote() {
 /* ---------- nodes and edges ---------- */
 const nodeEls = {};
 function mkNode(n) {
-  const b = el("button", "node t-" + n.k, n.t);
+  const b = el("button", "node t-" + n.k);
+  b.appendChild(el("span", "node-name", n.t));
   b.type = "button"; b.dataset.id = n.id;
   b.addEventListener("click", () => { if (b.dataset.drag === "1") { b.dataset.drag = ""; return; } select(n.id); });
   b.addEventListener("pointerdown", e => startDrag(e, n, b));
@@ -830,9 +899,6 @@ function relayout(keepView) {
   if (keepView === undefined) keepView = !!editing;      /* в режиме правки схема не прыгает к центру */
   placeAll(); syncNodeEls(); drawEdges();
   if (typeof refreshResetDel === "function") refreshResetDel();
-  const moved = N.filter(n => cfg[n.id] && cfg[n.id].pos).length;
-  const rp = $("#resetPos");
-  if (rp) { rp.hidden = !moved; rp.textContent = "Вернуть блоки на места (" + moved + ")"; }
   stage.style.width = W + "px"; stage.style.height = H + "px";
   if (keepView) apply(scale, false);                  /* масштаб не трогаем: вернуть всё в экран — кнопка «По ширине» */
   else {
@@ -904,7 +970,7 @@ addEventListener("pointerup", e => {
   cfg[d.n.id].pos = { x: d.n.x, y: d.n.y };
   if (typeof dirty !== "undefined") dirty.add(d.n.id);
   relayout(true); saveSoon();
-  setStatus("Блок передвинут. Вернуть все блоки на места — кнопка вверху", 6000);
+  setStatus("Блок передвинут", 6000);
 });
 function refreshNode(id) {
   const n = byId[id], b = nodeEls[id], c = cfg[id];
@@ -913,9 +979,11 @@ function refreshNode(id) {
   b.classList.toggle("has-open", c.q.length > 0);
   FILLS.forEach(f => b.classList.remove("fill-" + f[0])); b.classList.toggle("fill", !!c.color);
   if (c.color) b.classList.add("fill-" + c.color);
-  if (b.firstChild && b.firstChild.nodeType === 3 && b.firstChild.nodeValue !== n.t) b.firstChild.nodeValue = n.t;
+  const title = b.querySelector(".node-name");
+  if (title.textContent !== n.t) title.textContent = n.t;
+  title.style.fontWeight = c.titleWeight || "";
   b.setAttribute("aria-label", n.t + (c.c.length ? ", критериев: " + c.c.length : "") + (RES ? (n.p && !OWN[id] ? ", нет данных" : ", должников: " + RES[id].length) : ""));
-  b.querySelectorAll(".cnt,.dc,.code").forEach(x => x.remove());
+  b.querySelectorAll(".cnt,.dc,.code,.delta").forEach(x => x.remove());
   b.appendChild(el("span", "code", id));
   if (c.c.length) b.appendChild(el("span", "cnt", String(c.c.length)));
   if (RES) {
@@ -923,6 +991,13 @@ function refreshNode(id) {
     const d = el("span", "dc" + (nd || stale ? " inh" : ""), stale ? "?" : nd ? "—" : nf.format(RES[id].length));
     d.title = stale ? "Блок создан или его правила изменены после публикации общих данных: нужна новая публикация" : nd ? "Для блока нет данных в файле: привяжите критерии к колонкам" : "Должников в блоке";
     b.appendChild(d);
+  }
+  const delta = comparisonBadges.get(id);
+  if (delta) {
+    const change = delta.added.length - delta.removed.length;
+    const badge = el("span", "delta", (change > 0 ? "+" : "") + nf.format(change));
+    badge.title = "Сравнение загрузок: добавились " + nf.format(delta.added.length) + ", выбыли " + nf.format(delta.removed.length);
+    b.appendChild(badge);
   }
 }
 function refreshStats() {
@@ -1053,6 +1128,12 @@ placeAll(); syncNodeEls(); drawEdges();
 let DATA = null;            // {file, sheet, cols:[], rows:[[]], sheets:[], wb}
 let NORM = [], STR = [];    // per column caches
 let RES = null, OWN = {};   // node id -> row indices; node id -> active rules
+let previousLoad = null, latestLoad = null, comparisonBadges = new Map();
+function rememberLoad(file) {
+  if (latestLoad && latestLoad.file !== file) previousLoad = latestLoad;
+  latestLoad = { file, data: DATA, norm: NORM, str: STR };
+  paintSharedBtns();
+}
 const OPS = [
   ["filled", "заполнено"], ["empty", "пусто"], ["eq", "="], ["ne", "≠"], ["lt", "<"], ["le", "≤"], ["gt", ">"], ["ge", "≥"],
   ["contains", "содержит"], ["ncontains", "не содержит"], ["older", "дата старше N лет"], ["newer", "дата не старше N лет"], ["emptynewer", "пусто или дата не старше N лет"], ["in", "одно из списка"], ["nin", "не из списка"]
@@ -1184,12 +1265,59 @@ try { const v = localStorage.getItem("funnel-dead5"); deadMode = v === "recent" 
 /* строки, которые участвуют в воронке: при включённом тумблере скрыты должники, умершие больше 5 месяцев назад */
 const nRows = () => DATA.big ? DATA.n : DATA.rows.length;
 const AMT_COL = "Сумма долга + ГП Остаток", ID_COL = "ID договора внутренний", DEAD_COL = "Дата смерти";
+const CESSION_COL = "Наименование цессии в КСК";
+const cessionKey = v => String(v ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase("ru");
+let cessionLabels = new Map();
+const selectedCessions = new Set();
+function assignCessions(values) {
+  DATA.cessions = values && values.map(v => String(v ?? "").trim().replace(/\s+/g, " "));
+  DATA.cessionKeys = DATA.cessions && DATA.cessions.map(cessionKey);
+}
+function readCessions() {
+  const c = colIdx(CESSION_COL);
+  assignCessions(c < 0 ? null : DATA.rows.map(r => r[c]));
+}
+function paintCessions() {
+  const menu = $("#cessionMenu");
+  cessionLabels = new Map();
+  if (DATA && DATA.cessions) DATA.cessions.forEach((v, i) => {
+    const key = DATA.cessionKeys[i];
+    if (!cessionLabels.has(key)) cessionLabels.set(key, v || "Не указано");
+  });
+  for (const key of selectedCessions) if (!cessionLabels.has(key)) selectedCessions.delete(key);
+  menu.hidden = !cessionLabels.size;
+  if (menu.hidden) menu.open = false;
+  $("#cessionSearch").value = "";
+  paintCessionOptions();
+}
+function paintCessionOptions() {
+  const box = $("#cessionOptions"), query = cessionKey($("#cessionSearch").value);
+  $("#cessionLabel").textContent = selectedCessions.size ? "Цессии: " + selectedCessions.size : "Цессии: все";
+  box.replaceChildren();
+  const entries = [...cessionLabels].sort((a, b) => a[1].localeCompare(b[1], "ru"));
+  for (const [key, label] of entries) {
+    if (!cessionKey(label).includes(query)) continue;
+    const line = el("label"), input = el("input");
+    input.type = "checkbox"; input.checked = selectedCessions.has(key);
+    input.addEventListener("change", () => {
+      if (input.checked) selectedCessions.add(key); else selectedCessions.delete(key);
+      $("#cessionLabel").textContent = selectedCessions.size ? "Цессии: " + selectedCessions.size : "Цессии: все";
+      recalc(); filterStatus();
+    });
+    line.append(input, document.createTextNode(label)); box.appendChild(line);
+  }
+  if (!box.childElementCount) box.appendChild(el("p", "hint", "Цессии не найдены"));
+}
+$("#cessionSearch").addEventListener("input", paintCessionOptions);
+$("#cessionClear").addEventListener("click", () => { selectedCessions.clear(); paintCessionOptions(); recalc(); filterStatus(); });
+document.addEventListener("click", e => { const menu = $("#cessionMenu"); if (menu.open && !menu.contains(e.target)) menu.open = false; });
 let minAmt = 0;
 try { minAmt = Number(localStorage.getItem("funnel-minamt")) || 0; } catch (e) {}
 /* noDeath: без фильтра по дате смерти — так считается «Все должники»: фильтр по смерти касается
    только умерших и всего, что ниже, а общее число должников от него не меняется */
 function visibleRows(noDeath) {
   let all = Array.from({ length: nRows() }, (_, i) => i);
+  if (selectedCessions.size && DATA.cessionKeys) all = all.filter(i => selectedCessions.has(DATA.cessionKeys[i]));
   if (deadMode && !noDeath) {
     const ci = colIdx("Дата смерти");
     if (ci >= 0 && NORM[ci]) {
@@ -1207,8 +1335,9 @@ function visibleRows(noDeath) {
 function filterStatus() {
   if (!DATA || !RES) return;
   if (minAmt > 0 && colIdx(AMT_COL) < 0) { setStatus("В файле нет колонки «" + AMT_COL + "»", 5000); return; }
-  if (!deadMode && !(minAmt > 0)) { setStatus("Фильтры сняты: показаны все должники", 4000); return; }
+  if (!deadMode && !(minAmt > 0) && !selectedCessions.size) { setStatus("Фильтры сняты: показаны все должники", 4000); return; }
   const parts = []; if (deadMode) parts.push(deadMode === "recent" ? "смерть не больше 5 месяцев назад" : "смерть больше 5 месяцев назад"); if (minAmt > 0) parts.push("остаток долга + ГП от " + nf.format(minAmt) + " ₽");
+  if (selectedCessions.size) parts.push("цессий выбрано " + selectedCessions.size);
   setStatus("Фильтры: " + parts.join(", ") + (deadMode && RES.dead ? ". Умерших показано " + nf.format(RES.dead.length) : ". Показано " + nf.format(RES.root.length) + " из " + nf.format(nRows())), 6000);
 }
 function paintSeg() {
@@ -1279,6 +1408,7 @@ function computeSets(base) {
   return { res: RES, own: OWN };
 }
 function recalc() {
+  comparisonBadges.clear();
   if (!DATA) { RES = null; OWN = {}; return; }
   if (DATA.shared) { const before = [...STALE].join(); sharedRecalc(); if ([...STALE].join() !== before) sharedInfo(); }
   else {
@@ -1411,27 +1541,38 @@ async function forEachDataRow(file, ctx, path, onHeader, onRow, prog) {
   }, prog);
 }
 function neededColNames() {
-  const s = new Set(["Дата смерти", "Сумма долга + ГП Остаток", ID_COL]);
+  const s = new Set(["Дата смерти", "Сумма долга + ГП Остаток", ID_COL, CESSION_COL]);
   N.forEach(n => cfg[n.id].c.forEach(c => { const r = c.r; if (r && r.col) { s.add(r.col); if (r.cmp) s.add(r.cmp); if (r.col === "Дата Исполнительного документа") s.add("№ Исполнительного документа"); } }));
   return s;
 }
-let bigBusy = false, lastPct = -1, lastPctT = 0;
-const progFn = label => p => { const now = performance.now(); const pc = Math.min(100, Math.floor(p * 100)); if (pc !== lastPct && now - lastPctT > 250) { lastPct = pc; lastPctT = now; setStatus(label + " " + pc + "%"); } };
+let bigBusy = false, fileBusy = false;
+const progFn = (label, reading = false) => {
+  let last = -1, lastAt = 0;
+  return p => {
+    const now = performance.now(), pc = Math.min(100, Math.floor(p * 100));
+    if (pc === last || (last >= 0 && pc < 100 && now - lastAt < 250)) return;
+    last = pc; lastAt = now;
+    const message = label + " " + pc + "%";
+    if (reading) loadProgress(message, pc); else setStatus(message);
+  };
+};
 async function bigLoad(file, sheetName, ctx0) {
   if (bigBusy) return; bigBusy = true;
+  const original = { data: DATA, norm: NORM, str: STR };
   try {
-    setStatus("Открываю большой файл…");
-    const ctx = ctx0 || await bigOpen(file, progFn("Читаю словарь строк…"));
+    loadProgress("Открываю большой файл…");
+    const ctx = ctx0 || await bigOpen(file, progFn("Читаю словарь строк", true));
+    loadProgress("Читаю файл…");
     const sh = ctx.sheets.find(s => s.name === sheetName) || ctx.sheets.reduce((a, b) => b.size > a.size ? b : a);
-    const want = neededColNames(), wantK = new Set([...want].flatMap(colKeys)), idKey = colKey(ID_COL);
-    let cols = null, wantIdx = [], arrs = [], n = 0, idK = -1;
-    const idRaw = [];
+    const want = neededColNames(), wantK = new Set([...want].flatMap(colKeys)), idKey = colKey(ID_COL), cessionColKey = colKey(CESSION_COL);
+    let cols = null, wantIdx = [], arrs = [], n = 0, idK = -1, cessionK = -1;
+    const idRaw = [], cessions = [];
     const memo = new Map();
     const t0 = performance.now();
     await forEachDataRow(file, ctx, sh.path, vals => {
       const used = {};
       cols = Array.from(vals, (v, i) => { let t = v == null || String(v).trim() === "" ? "Колонка " + (i + 1) : cleanHead(String(v).trim()); if (used[t]) { used[t]++; t = t + " (" + used[t] + ")"; } else used[t] = 1; return t; });
-      cols.forEach((nm, i) => { if (want.has(nm) || wantK.has(colKey(nm))) { wantIdx.push(i); arrs.push([]); if (idK < 0 && colKey(nm) === idKey) idK = wantIdx.length - 1; } });
+      cols.forEach((nm, i) => { if (want.has(nm) || wantK.has(colKey(nm))) { wantIdx.push(i); arrs.push([]); if (idK < 0 && colKey(nm) === idKey) idK = wantIdx.length - 1; if (cessionK < 0 && colKey(nm) === cessionColKey) cessionK = wantIdx.length - 1; } });
     }, (i, vals) => {
       n++;
       for (let k = 0; k < wantIdx.length; k++) {
@@ -1440,24 +1581,29 @@ async function bigLoad(file, sheetName, ctx0) {
         else r = v == null ? null : normVal(v);
         arrs[k].push(r);
         if (k === idK) idRaw.push(v == null ? "" : String(v).trim());
+        if (k === cessionK) cessions.push(v);
       }
-    }, progFn("Читаю файл:"));
+    }, progFn("Читаю файл:", true));
     if (!cols) throw new Error("лист пустой");
     DATA = { file: file.name, f: file, big: true, ctx, cols, n, sheet: sh.name, sheets: ctx.sheets.map(s => s.name), loaded: new Set(wantIdx), rows: null, idRaw: idK >= 0 ? idRaw : null };
     NORM = []; STR = []; wantIdx.forEach((c, k) => NORM[c] = arrs[k]);
+    assignCessions(cessionK < 0 ? null : cessions);
+    paintCessions();
+    loadProgress("Считаю воронку…");
+    await tick();
     previewCache = {};
     const ss = $("#sheetSel"); ss.replaceChildren(); DATA.sheets.forEach(s => ss.appendChild(new Option(s, s))); ss.value = sh.name; ss.hidden = DATA.sheets.length < 2;
     bigBusy = false;
     recalc();
     setInfo([el("b", null, file.name), " · лист «" + sh.name + "» · " + nf.format(n) + " строк · " + cols.length + " колонок (большой файл: в памяти " + wantIdx.length + " колонок, нужных для правил, чтение " + ((performance.now() - t0) / 1000).toFixed(0) + " с)"].concat(missingNote() || []));
-    $("#allBtn").disabled = false; $("#idsBtn").disabled = false; $("#allMode").disabled = false;
+    $("#allBtn").disabled = false; $("#idsBtn").disabled = false;
+    rememberLoad(file);
     setStatus("Файл загружен", 2500);
     if (sel) select(sel);
   } catch (e) {
     bigBusy = false;
-    DATA = null; RES = null; OWN = {}; N.forEach(n => refreshNode(n.id));
-    setInfo(["Не удалось прочитать файл: " + (e.message || e)]); setStatus("", 0); updatePanelData();
-  } finally { bigBusy = false; }
+    restoreFailedLoad(original, e);
+  } finally { bigBusy = false; loadProgress(); }
 }
 /* правило сослалось на колонку, которой нет в памяти: перечитываем файл с ней */
 function bigMissing() {
@@ -1781,16 +1927,11 @@ async function downloadRules() {
   finally { btn.disabled = false; }
 }
 $("#dlRules").addEventListener("click", downloadRules);
-function refreshResetDel() { const b = $("#restoreDel"); if (!b) return; const k = (cfg.__del || []).length; b.hidden = !k; b.textContent = "Вернуть удалённые блоки (" + k + ")"; }
+function refreshResetDel() { const b = $("#restoreDel"); if (!b) return; const k = (cfg.__del || []).length; b.hidden = !k || (REMOTE && !TOKEN); b.textContent = "Вернуть удалённые блоки (" + k + ")"; }
 $("#restoreDel").addEventListener("click", () => {
   if (REMOTE && !TOKEN) { setStatus("Войдите для правки, чтобы вернуть блоки для всех", 5000); showAuth(); return; }
   const back = restoreDeleted(); relayout(); recalc(); store.save(); refreshResetDel(); if (sel) select(sel);
   setStatus("Возвращены блоки: " + (back.join(", ") || "—") + ". Они встали на свои места и получили критерии по умолчанию — проверьте их в таблице правил", 9000);
-});
-$("#resetPos").addEventListener("click", () => {
-  if (REMOTE && !TOKEN) { setStatus("Войдите для правки, чтобы вернуть блоки на места для всех", 5000); showAuth(); return; }
-  N.forEach(n => { if (cfg[n.id] && cfg[n.id].pos) { cfg[n.id].pos = null; if (typeof dirty !== "undefined") dirty.add(n.id); } });
-  relayout(); store.save(); setStatus("Блоки вернулись на места схемы", 3000);
 });
 
 /* ---------- rules table (xlsx): block names + criteria ---------- */
@@ -1913,34 +2054,49 @@ function pickSheet(wb, name) {
 function useSheet(name) {
   const { cols, rows } = pickSheet(DATA.wb, name);
   DATA.sheet = name; DATA.cols = cols; DATA.rows = rows;
-  buildCaches(); recalc();
+  buildCaches(); readCessions(); paintCessions(); recalc();
   setInfo([el("b", null, DATA.file), " · лист «" + name + "» · " + nf.format(rows.length) + " строк · " + cols.length + " колонок"].concat(missingNote() || []));
-  $("#allBtn").disabled = false; $("#idsBtn").disabled = false; $("#allMode").disabled = false;
+  $("#allBtn").disabled = false; $("#idsBtn").disabled = false;
   if (sel) select(sel);
 }
+function restoreFailedLoad(original, error) {
+  const changed = DATA !== original.data;
+  DATA = original.data; NORM = original.norm; STR = original.str;
+  if (changed) { paintCessions(); recalc(); }
+  const ss = $("#sheetSel");
+  ss.replaceChildren(...(DATA && !DATA.shared ? DATA.sheets : []).map(name => new Option(name, name)));
+  ss.hidden = ss.options.length < 2;
+  if (DATA) ss.value = DATA.sheet;
+  setStatus("Не удалось прочитать файл: " + (error.message || error), 8000);
+}
 async function loadFile(file) {
+  if (fileBusy || bigBusy) { setStatus("Дождитесь завершения чтения текущего файла", 3000); return; }
+  fileBusy = true;
+  const original = { data: DATA, norm: NORM, str: STR };
   const isX = /\.xls[xm]$/i.test(file.name);
-  if (isX && file.size > BIG_SIZE) { await bigLoad(file); return; }
-  if (typeof XLSX === "undefined") { setStatus("Не загрузилась библиотека чтения Excel", 5000); return; }
-  setStatus("Читаю файл…");
-  await new Promise(r => setTimeout(r, 30));
   try {
+    if (isX && file.size > BIG_SIZE) { await bigLoad(file); return; }
+    if (typeof XLSX === "undefined") { setStatus("Не загрузилась библиотека чтения Excel", 5000); return; }
+    loadProgress("Читаю файл…");
+    await new Promise(r => setTimeout(r, 30));
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: "array", cellDates: true });
-    DATA = { file: file.name, wb, sheets: wb.SheetNames, cols: [], rows: [] };
+    loadProgress("Считаю воронку…");
+    await tick();
+    DATA = { f: file, file: file.name, wb, sheets: wb.SheetNames, cols: [], rows: [] };
     const ss = $("#sheetSel"); ss.replaceChildren();
     wb.SheetNames.forEach(s => ss.appendChild(new Option(s, s)));
     ss.hidden = wb.SheetNames.length < 2;
     useSheet(wb.SheetNames[0]);
+    rememberLoad(file);
     setStatus("Файл загружен", 2500);
   } catch (e) {
-    if (isX && file.size > 3 * 1024 * 1024) { await bigLoad(file); return; }
-    DATA = null; RES = null; OWN = {}; N.forEach(n => refreshNode(n.id));
-    setInfo(["Не удалось прочитать файл: " + (e.message || e)]); setStatus("", 0); updatePanelData();
-  }
+    if (isX && file.size > 3 * 1024 * 1024 && DATA === original.data) { await bigLoad(file); return; }
+    restoreFailedLoad(original, e);
+  } finally { fileBusy = false; loadProgress(); }
 }
 $("#file").addEventListener("change", e => { const f = e.target.files[0]; if (f) loadFile(f); e.target.value = ""; });
-$("#sheetSel").addEventListener("change", e => { try { if (DATA && DATA.big) { bigLoad(DATA.f, e.target.value, DATA.ctx); return; } useSheet(e.target.value); } catch (err) { setStatus(String(err.message || err), 4000); } });
+$("#sheetSel").addEventListener("change", e => { if (fileBusy || bigBusy || !FILEDATA()) return; try { if (DATA.big) { bigLoad(DATA.f, e.target.value, DATA.ctx); return; } useSheet(e.target.value); rememberLoad(DATA.f); } catch (err) { setStatus(String(err.message || err), 4000); } });
 const bar = $("#databar");
 ["dragenter", "dragover"].forEach(t => addEventListener(t, e => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) { e.preventDefault(); bar.classList.add("drag"); } }));
 ["dragleave", "drop"].forEach(t => addEventListener(t, e => { if (t === "drop" || e.target === document.documentElement || !e.relatedTarget) bar.classList.remove("drag"); }));
@@ -2011,7 +2167,139 @@ async function downloadAll() {
   await new Promise(r => setTimeout(r, 30));
   await saveBook(wb, "Общий реестр воронки.xlsx");
 }
-$("#allBtn").addEventListener("click", downloadAll);
+function comparisonSnapshot(source) {
+  const original = { data: DATA, norm: NORM, str: STR };
+  DATA = source.data; NORM = source.norm; STR = source.str;
+  try {
+    const idColumn = colIdx(ID_COL);
+    if (idColumn < 0) throw new Error("В выгрузке «" + DATA.file + "» нет колонки «" + ID_COL + "».");
+    if (bigMissing()) throw new Error("Для предыдущего большого файла нужны дополнительные колонки. Загрузите оба файла заново с текущими правилами.");
+    const columns = [...neededColNames()].filter(name => name !== CESSION_COL || selectedCessions.size || N.some(n => cfg[n.id].c.some(c => c.r && [c.r.col, c.r.cmp].includes(name))));
+    const missing = columns.filter(name => colIdx(name) < 0);
+    const ids = (DATA.big ? DATA.idRaw : DATA.rows.map(r => r[idColumn])).map(cleanId);
+    const unique = new Set(), duplicates = new Set();
+    let blank = 0;
+    for (const id of ids) {
+      if (!id) blank++;
+      else if (unique.has(id)) duplicates.add(id);
+      else unique.add(id);
+    }
+    const { res, own } = computeSets(visibleRows());
+    if (deadMode) res.root = visibleRows(true);
+    return { res, own, ids, duplicates, blank, missing };
+  } finally {
+    DATA = original.data; NORM = original.norm; STR = original.str;
+  }
+}
+function compareLoads(previous, current) {
+  const a = comparisonSnapshot(previous), b = comparisonSnapshot(current);
+  const changedColumns = [...new Set([...a.missing, ...b.missing])]
+    .filter(name => a.missing.includes(name) !== b.missing.includes(name));
+  if (changedColumns.length) throw new Error("В одной из выгрузок отсутствуют колонки для сравнения: " + changedColumns.join(", ") + ".");
+  const ignored = new Set([...a.duplicates, ...b.duplicates]);
+  const membership = (snapshot, id) => new Set(snapshot.res[id].map(i => snapshot.ids[i]).filter(key => key && !ignored.has(key)));
+  const blocks = [];
+  const beforeById = new Map(), afterById = new Map();
+  for (const n of N) {
+    if (n.p && (!a.own[n.id] || !b.own[n.id])) continue;
+    const before = membership(a, n.id), after = membership(b, n.id);
+    const label = n.t + " (" + n.id + ")";
+    for (const [ids, byContract] of [[before, beforeById], [after, afterById]]) {
+      for (const id of ids) {
+        if (!byContract.has(id)) byContract.set(id, []);
+        byContract.get(id).push(label);
+      }
+    }
+    const added = [...after].filter(id => !before.has(id));
+    const removed = [...before].filter(id => !after.has(id));
+    blocks.push({ id: n.id, label, before: before.size, after: after.size, added, removed });
+  }
+  return { blocks, beforeById, afterById, duplicates: [...ignored], blankBefore: a.blank, blankAfter: b.blank };
+}
+function drawComparison(before, after, result) {
+  const box = $("#comparisonBody");
+  const sourceLabel = source => source.data.file + " · «" + source.data.sheet + "»";
+  box.replaceChildren(
+    el("p", null, "Предыдущая: " + sourceLabel(before) + " → Текущая: " + sourceLabel(after)),
+    el("p", "hint", "К обеим выгрузкам применены текущие правила и фильтры. Повторяющиеся ID исключены из обеих выгрузок.")
+  );
+  const { blocks, beforeById, afterById, duplicates, blankBefore, blankAfter } = result;
+  if (blankBefore || blankAfter || duplicates.length) {
+    box.appendChild(el("p", "warn-note", "Пустые ID: " + nf.format(blankBefore) + " в предыдущей, " + nf.format(blankAfter) + " в текущей. Повторяющихся ID: " + nf.format(duplicates.length) + "."));
+    if (duplicates.length) {
+      const details = el("details", "details-line");
+      details.append(el("summary", null, "Показать повторяющиеся ID"), el("p", null, duplicates.slice(0, 100).join(", ") + (duplicates.length > 100 ? " …" : "")));
+      box.appendChild(details);
+    }
+  }
+  const table = el("table"), header = table.createTHead().insertRow(), body = table.createTBody();
+  for (const title of ["Блок", "Было", "Стало", "Изменение", "Добавились", "Выбыли"]) header.appendChild(el("th", null, title)).scope = "col";
+  for (const block of blocks) {
+    const row = body.insertRow();
+    const delta = block.after - block.before;
+    for (const value of [block.label, nf.format(block.before), nf.format(block.after), (delta > 0 ? "+" : "") + nf.format(delta)]) row.insertCell().textContent = value;
+    for (const [kind, ids] of [["Добавились", block.added], ["Выбыли", block.removed]]) {
+      const cell = row.insertCell();
+      if (!ids.length) { cell.textContent = "0"; continue; }
+      const button = el("button", "btn", nf.format(ids.length));
+      button.setAttribute("aria-label", kind + " в блоке «" + block.label + "»: " + nf.format(ids.length));
+      button.addEventListener("click", () => {
+        const next = row.nextElementSibling;
+        if (next && next.dataset.kind === kind) { next.remove(); return; }
+        if (next && next.dataset.kind) next.remove();
+        const details = body.insertRow(row.sectionRowIndex + 1);
+        details.dataset.kind = kind;
+        const content = details.insertCell(); content.colSpan = 6; content.className = "details-line";
+        content.appendChild(el("b", null, kind + " · " + block.label));
+        for (const id of ids.slice(0, 30)) {
+          content.appendChild(el("p", null, id + " · " + (beforeById.get(id)?.join(", ") || "нет в выборке") + " → " + (afterById.get(id)?.join(", ") || "нет в выборке")));
+        }
+        if (ids.length > 30) content.appendChild(el("p", "hint", "Первые 30 из " + nf.format(ids.length) + ". Полный список доступен в CSV."));
+      });
+      cell.appendChild(button);
+    }
+  }
+  const scroll = el("div", "table-scroll"); scroll.appendChild(table); box.appendChild(scroll);
+  const exportBtn = el("button", "btn", "Скачать изменения CSV");
+  exportBtn.addEventListener("click", async () => {
+    const parts = ["\uFEFF" + csvLine(["Блок", "Изменение", ID_COL, "Блоки до загрузки", "Блоки после загрузки"])];
+    for (const block of blocks) {
+      for (const [kind, ids] of [["Добавился", block.added], ["Выбыл", block.removed]]) {
+        const lines = ids.map(id => csvLine([block.label, kind, id, beforeById.get(id)?.join(" | ") || "", afterById.get(id)?.join(" | ") || ""]));
+        parts.push(lines.join(""));
+      }
+    }
+    for (const id of duplicates) parts.push(csvLine(["", "Повторяющийся ID", id, "", ""]));
+    await saveBlob(new Blob(parts, { type: "text/csv;charset=utf-8" }), "Изменения воронки.csv");
+  });
+  box.appendChild(exportBtn);
+}
+$("#compareBtn").addEventListener("click", () => {
+  if (!previousLoad || !FILEDATA() || fileBusy || bigBusy) return;
+  const current = { data: DATA, norm: NORM, str: STR };
+  try {
+    const result = compareLoads(previousLoad, current);
+    comparisonBadges = new Map(result.blocks.filter(block => block.added.length || block.removed.length).map(block => [block.id, block]));
+    N.forEach(n => refreshNode(n.id));
+    drawComparison(previousLoad, current, result);
+  }
+  catch (e) { $("#comparisonBody").replaceChildren(el("p", "warn-note", e.message || String(e))); }
+  $("#comparison").showModal();
+});
+
+const registryDialog = $("#registryDialog");
+function paintRegistryHint() {
+  $("#registryHint").textContent = $("#allMode").value === "deep"
+    ? "Если строка есть в нескольких ветках, она останется в каждой из них."
+    : "Строка будет выгружена для каждого блока с действующими критериями, в который она попала.";
+}
+$("#allMode").addEventListener("change", paintRegistryHint);
+$("#allBtn").addEventListener("click", () => {
+  registryDialog.returnValue = "";
+  paintRegistryHint();
+  registryDialog.showModal();
+});
+registryDialog.addEventListener("close", () => { if (registryDialog.returnValue === "download") downloadAll(); });
 
 /* ---------- общие данные: один загружает выгрузку и публикует, у остальных воронка появляется сама ---------- */
 /* В репозиторий уходит только посчитанное: внутренний ID, дата смерти, остаток долга + ГП и состав блоков.
@@ -2082,7 +2370,7 @@ function buildShared() {
   const ver = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const sig = Object.fromEntries(N.map(nd => [nd.id, ruleSig(nd.id)]));
   const why = packWhy(res, own);
-  return { v: 1, ver, at: new Date().toISOString(), file: DATA.file, sheet: DATA.sheet || "", n, ids, amt, dd, own: owns, map, sets, sig, why };
+  return { v: 1, ver, at: new Date().toISOString(), file: DATA.file, sheet: DATA.sheet || "", n, ids, amt, dd, cessions: DATA.cessions || undefined, own: owns, map, sets, sig, why };
 }
 async function repoShas() {
   const r = await fetch(API.replace(/\/$/, "") + "?ref=" + BR + "&_=" + Date.now(), { headers: ghHeaders(), cache: "no-store" });
@@ -2155,11 +2443,13 @@ function applyShared(j) {
   const n = j.n, cols = [ID_COL];
   if (j.dd) cols.push(DEAD_COL);
   if (j.amt) cols.push(AMT_COL);
+  if (j.cessions) cols.push(CESSION_COL);
   const rows = new Array(n);
   for (let i = 0; i < n; i++) {
     const r = [j.ids[i]];
     if (j.dd) { const v = j.dd[i]; if (v == null) r.push(null); else { const t = new Date(v * 864e5); r.push(new Date(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate())); } }
     if (j.amt) r.push(j.amt[i]);
+    if (j.cessions) r.push(j.cessions[i]);
     rows[i] = r;
   }
   const dec = {}; Object.entries(j.sets).forEach(([k, v]) => { dec[k] = unb64(v); });
@@ -2167,11 +2457,11 @@ function applyShared(j) {
   SH = { sets: {}, own: j.own || {}, map: j.map || {}, sig: j.sig || null, why: uw.why, whyLabels: uw.labels };
   Object.entries(j.map).forEach(([id, k]) => { SH.sets[id] = dec[k]; });
   DATA = { file: j.file, shared: { ver: j.ver, at: j.at, n }, cols, rows, sheet: j.sheet || "", sheets: [] };
-  previewCache = {}; buildCaches(); SHARED_VER = j.ver; sharedNotified = j.ver;
+  previewCache = {}; buildCaches(); readCessions(); paintCessions(); SHARED_VER = j.ver; sharedNotified = j.ver;
   $("#sheetSel").hidden = true;
   recalc();
   sharedInfo();
-  $("#allBtn").disabled = false; $("#idsBtn").disabled = false; $("#allMode").disabled = false;
+  $("#allBtn").disabled = false; $("#idsBtn").disabled = false;
   if (sel) select(sel);
 }
 function sharedInfo() {
@@ -2188,7 +2478,10 @@ function sharedInfo() {
 }
 function paintSharedBtns() {
   const pub = $("#pubBtn"), sh = $("#sharedBtn"); if (!pub || !sh) return;
-  pub.hidden = !REMOTE;
+  $("#compareBtn").hidden = !FILEDATA() || !previousLoad;
+  pub.hidden = !REMOTE || !TOKEN;
+  for (const control of document.querySelectorAll("[data-edit-only]")) control.hidden = REMOTE && !TOKEN;
+  refreshResetDel();
   pub.disabled = !FILEDATA();
   pub.title = FILEDATA() ? "Сохранить посчитанную воронку, чтобы коллеги увидели её без загрузки файла" : "Чтобы опубликовать: войдите для правки и загрузите Excel. Сейчас на экране " + (DATA && DATA.shared ? "уже опубликованные данные" : "нет файла");
   sh.hidden = !(REMOTE && SHARED_META);
@@ -2199,7 +2492,7 @@ function paintSharedBtns() {
 }
 /* force: пользователь сам нажал кнопку — показать общие данные, даже если открыт свой файл */
 async function checkShared(force) {
-  if (!REMOTE || sharedBusy) return;
+  if (!REMOTE || sharedBusy || fileBusy || bigBusy) return;
   sharedBusy = true;
   try {
     if (force) sharedEtag = null;
@@ -2214,13 +2507,13 @@ async function checkShared(force) {
       return;
     }
     if (showing && DATA.shared.ver === meta.ver) { if (force) setStatus("Общие данные актуальны", 2500); return; }
-    setStatus("Загружаю общие данные…");
+    loadProgress("Загружаю общие данные…");
     const j = JSON.parse(td.decode(await gunzipBytes(await fetchDataBin())));
-    if (FILEDATA() && !force) return;               /* пока грузили, пользователь открыл свой файл */
+    if (fileBusy || bigBusy || (FILEDATA() && !force)) return;
     applyShared(j);
     setStatus(showing ? "Общие данные обновлены" : "Загружены общие данные", 4000);
   } catch (e) { sharedEtag = null; setStatus("Не удалось загрузить общие данные: " + (e.message || e), 7000); }
-  finally { sharedBusy = false; }
+  finally { sharedBusy = false; if (!fileBusy && !bigBusy) loadProgress(); }
 }
 function startShared() {
   if (sharedTimer) return;
@@ -2462,7 +2755,7 @@ function updatePanelData() {
   const nd = byId[id].p && !OWN[id];
   num.textContent = nd ? "—" : nf.format(rows);
   const pct = total ? (rows / total * 100) : 0;
-  $("#tileSub").textContent = "из " + nf.format(total) + ((deadMode || minAmt > 0) ? " должников (с учётом фильтров, " : " строк файла (") + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (nd ? ". Для этого блока в файле нет данных. Задайте критерии в таблице правил, иначе число не считается." : "");
+  $("#tileSub").textContent = "из " + nf.format(total) + ((deadMode || minAmt > 0 || selectedCessions.size) ? " должников (с учётом фильтров, " : " строк файла (") + pct.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + "%)" + (nd ? ". Для этого блока в файле нет данных. Задайте критерии в таблице правил, иначе число не считается." : "");
   $("#dlBlock").disabled = rows === 0 || !!nd;
   const pv = $("#prev"); pv.replaceChildren();
   if (!rows) { pv.appendChild(el("p", "empty", "В блоке нет строк.")); return; }
@@ -2626,6 +2919,9 @@ function renderEditor(n, c) {
   const nm = el("input"); nm.type = "text"; nm.value = c.uname || c.name || n.t0; nm.style.width = "100%"; nm.setAttribute("aria-label", "Название блока");
   nm.addEventListener("input", () => { c.uname = nm.value.trim(); n.t = c.uname || c.name || n.t0; changed(); });
   panel.appendChild(section("Название блока", nm));
+  const weight = selectEl(TITLE_WEIGHTS, c.titleWeight || "", "Толщина шрифта названия");
+  weight.addEventListener("change", () => { c.titleWeight = weight.value; changed(); });
+  panel.appendChild(section("Толщина шрифта названия", weight));
   const sw = swatches(c.color || "", k => { c.color = k; changed(); renderPanel(); });
   panel.appendChild(section("Цвет заливки", sw));
   if (n.id !== "root") {
@@ -2732,8 +3028,7 @@ function renderEditor(n, c) {
   acts.appendChild(done);
 
   acts.appendChild(mini("Вернуть блок на место", () => { c.pos = null; if (typeof dirty !== "undefined") dirty.add(sel); relayout(); store.save(); }));
-  acts.appendChild(mini("Вернуть все блоки на места", () => { N.forEach(x => { if (cfg[x.id]) cfg[x.id].pos = null; if (typeof dirty !== "undefined") dirty.add(x.id); }); relayout(); store.save(); }));
-  acts.appendChild(mini("Вернуть критерии по умолчанию", () => { cfg[sel] = defCfg(n); recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); }, "danger"));
+  acts.appendChild(mini("Вернуть критерии по умолчанию", () => { cfg[sel] = { ...defCfg(n), titleWeight: c.titleWeight }; recalc(); refreshNode(sel); refreshStats(); store.save(); renderPanel(); }, "danger"));
   panel.appendChild(acts);
   if (REMOTE) acts.appendChild(mini("Сменить пароль", () => showAuth("change")));
   panel.appendChild(el("p", "hint", (REMOTE ? "Изменения сохраняются в общий файл и появляются у всех в течение 3 минут. " : "Изменения сохраняются автоматически. ") + "Правила расчёта меняются через таблицу правил; ваши формулировки при её загрузке не затираются. В режиме правки блок можно перетащить мышью — положение сохранится для всех."));
@@ -2792,6 +3087,51 @@ function fit() { manual = false; apply(fitScale(), true); vp.scrollLeft = 0; vp.
 $("#zIn").addEventListener("click", () => { manual = true; apply(scale + 0.1, true); });
 $("#zOut").addEventListener("click", () => { manual = true; apply(scale - 0.1, true); });
 $("#zFit").addEventListener("click", fit);
+vp.addEventListener("wheel", e => {
+  if (!e.ctrlKey || editing) return;
+  e.preventDefault();
+  const rect = vp.getBoundingClientRect();
+  const x = e.clientX - rect.left - vp.clientLeft, y = e.clientY - rect.top - vp.clientTop;
+  const stageRect = stage.getBoundingClientRect();
+  const sx = (e.clientX - stageRect.left) / scale, sy = (e.clientY - stageRect.top) / scale;
+  const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? vp.clientHeight : 1);
+  const next = Math.min(1.6, Math.max(.4, scale * Math.exp(-delta * .002)));
+  if (next === scale) return;
+  manual = true;
+  apply(next, true);
+  const nextRect = stage.getBoundingClientRect();
+  vp.scrollLeft += nextRect.left - rect.left - vp.clientLeft + sx * scale - x;
+  vp.scrollTop += nextRect.top - rect.top - vp.clientTop + sy * scale - y;
+}, { passive: false });
+let pan = null, skipPanClick = false;
+vp.addEventListener("pointerdown", e => {
+  skipPanClick = false;
+  if (editing || e.pointerType !== "mouse" || e.button !== 0 || pan || !(e.target === vp || sizer.contains(e.target))) return;
+  pan = { pointer: e.pointerId, x: e.clientX, y: e.clientY, left: vp.scrollLeft, top: vp.scrollTop, moved: false };
+});
+window.addEventListener("pointermove", e => {
+  if (!pan || e.pointerId !== pan.pointer) return;
+  const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+  if (!pan.moved) {
+    if (Math.hypot(dx, dy) < 5) return;
+    pan.moved = true;
+    vp.setPointerCapture(e.pointerId);
+    vp.classList.add("is-panning");
+  }
+  e.preventDefault();
+  vp.scrollLeft = pan.left - dx;
+  vp.scrollTop = pan.top - dy;
+});
+for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
+  window.addEventListener(type, e => {
+    if (!pan || e.pointerId !== pan.pointer) return;
+    skipPanClick = pan.moved && type === "pointerup";
+    pan = null; vp.classList.remove("is-panning");
+  });
+}
+vp.addEventListener("click", e => {
+  if (skipPanClick && e.detail) { e.stopImmediatePropagation(); e.preventDefault(); skipPanClick = false; }
+}, true);
 addEventListener("resize", () => { if (!manual) fit(); });
 
 $("#authBtn").addEventListener("click", () => {
