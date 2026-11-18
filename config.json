@@ -1,6 +1,6 @@
 {
  "v": 2,
- "updated": "2026-11-18T13:13:31.306Z",
+ "updated": "2026-11-18T13:13:52.428Z",
  "cfg": {
   "root": {
    "c": [],
@@ -230,7 +230,7 @@
    "rets": [],
    "ps": [],
    "color": "yellow",
-   "titleWeight": "600"
+   "titleWeight": "800"
   },
   "A1c": {
    "c": [
