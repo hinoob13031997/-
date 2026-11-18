@@ -193,16 +193,14 @@ ul.crit li.q::before { background: var(--warn); border-radius: 50%; }
 .databar { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
 .databar.drag { border-color: var(--accent); background: var(--accent-soft); }
 /* свёрнутая панель: одна строка — загрузка, файл, фильтры, публикация */
-.barmin .databar { padding: 7px 10px; gap: 8px 10px; flex-wrap: nowrap; }
+.barmin .databar { padding: 7px 10px; gap: 8px 10px; }
 .barmin .databar .more, .barmin .legend { display: none !important; }
 .barmin .databar .fileinfo { flex: 1 1 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 1.5em; font-size: 12.5px; }
 .barmin .databar .fileinfo .colwarn { display: inline; margin: 0 0 0 6px; }
 .barmin .databar .status { flex: 0 1 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.barmin .databar .btn, .barmin .seg button { padding-top: 5px; padding-bottom: 5px; }
-.databar .btn, .seg button, .seg .seg-l, .amt span { white-space: nowrap; }
-.barmin .databar > .btn, .barmin .databar > label.btn, .barmin .seg, .barmin .amt { flex-shrink: 0; }
-.barmin .amt { min-height: 30px; }
-@media (max-width: 1020px) { .barmin .databar { flex-wrap: wrap; } }
+.barmin .databar .btn { padding-top: 5px; padding-bottom: 5px; }
+.databar .btn { white-space: nowrap; }
+.barmin .databar > .btn { flex-shrink: 0; }
 .databar .fileinfo { flex: 1 1 260px; min-width: 0; font-size: 13px; color: var(--muted); }
 .databar .fileinfo b { color: var(--fg); font-weight: 600; overflow-wrap: anywhere; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
@@ -211,20 +209,11 @@ ul.crit li.q::before { background: var(--warn); border-radius: 50%; }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn[disabled] { opacity: .45; cursor: not-allowed; }
 .databar select, aside select, aside input[type=text], aside input[type=number], aside textarea { font: inherit; font-size: 13px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; min-width: 0; max-width: 100%; }
-.seg { display: inline-flex; align-items: center; gap: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--bg); }
-.seg .seg-l { font-size: 12.5px; color: var(--muted); padding: 0 8px 0 10px; }
-.seg button { font: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
-.seg button.on { background: var(--accent); color: #fff; }
-:root[data-theme="dark"] .seg button.on { color: #0b1a21; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .seg button.on { color: #0b1a21; } }
 .rulesinfo { flex: 1 1 100%; font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 8px; }
 .rulesinfo b { color: var(--fg); }
 .rulesinfo .w { color: #b4540a; display: block; }
 .fileinfo .colwarn { display: block; margin-top: 4px; color: #b4540a; }
 .fileinfo .colwarn b { color: #b4540a; }
-.amt { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); min-height: 34px; }
-.amt input { width: 96px; font: inherit; font-size: 13px; font-weight: 600; color: var(--fg); background: transparent; border: 0; border-bottom: 1px solid var(--line); padding: 3px 2px; text-align: right; }
-.amt input:focus { outline: none; border-bottom-color: var(--accent); }
 .status { font-size: 12px; color: var(--muted); font-family: var(--font-mono); min-height: 1em; }
 .node .dc { position: absolute; right: 6px; bottom: -13px; font-family: var(--font-mono); font-size: 16px; font-weight: 700; background: #ffd23f; color: #1a1a1a; border: 2px solid #1a1a1a; border-radius: 11px; padding: 0 8px; line-height: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.3); font-variant-numeric: tabular-nums; }
 :root[data-theme="dark"] .node .dc { color: #1a1a1a; }
@@ -265,7 +254,6 @@ h1 { font-size: clamp(20px, 2.4vw, 32px); letter-spacing: -.035em; }
 .board { overflow: hidden; background: var(--bg); }
 .node { border-radius: 12px; box-shadow: 0 2px 6px rgb(0 0 0 / .07); }
 .btn, .zoom { border-radius: 10px; }
-.barmin .databar { flex-wrap: wrap; }
 .barmin .databar .fileinfo { flex-basis: 260px; }
 #viewport { cursor: grab; }
 #viewport.is-panning, #viewport.is-panning .node { cursor: grabbing; user-select: none; }
@@ -273,10 +261,18 @@ h1 { font-size: clamp(20px, 2.4vw, 32px); letter-spacing: -.035em; }
 #loading[hidden] { display: none; }
 #loading progress { width: min(180px, 30%); accent-color: #e12439; }
 @media (prefers-color-scheme: dark) { #loading { color: #ff838b; } }
-#cessionMenu { position: relative; }
-#cessionMenu summary { list-style: none; }
+.data-filters { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 100%; }
+.databar .filter-field { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); font: inherit; font-size: 13px; white-space: nowrap; }
+.barmin .databar .filter-field { min-height: 32px; }
+.databar .filter-field:hover, .databar .filter-field:focus-within { border-color: var(--accent); }
+.databar .filter-field.is-active { background: var(--accent-soft); border-color: var(--accent); }
+.databar select.filter-field { display: block; cursor: pointer; }
+.filter-field input { width: 6.5ch; font: inherit; color: inherit; background: transparent; border: 0; padding: 0; text-align: right; }
+.filter-field input:focus { outline: none; }
+#cessionMenu summary { list-style: none; cursor: pointer; }
+#cessionMenu summary::after { content: "▾"; color: var(--muted); }
 #cessionMenu summary::-webkit-details-marker { display: none; }
-#cessionMenu .popover { position: absolute; z-index: 3; top: calc(100% + 8px); inset-inline-end: 0; width: min(320px, 82vw); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px; box-shadow: 0 12px 32px rgb(0 0 0 / .14); }
+#cessionMenu .popover { position: absolute; z-index: 3; top: calc(100% + 8px); inset-inline-end: 0; width: min(320px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px; box-shadow: 0 12px 32px rgb(0 0 0 / .14); }
 #cessionOptions { max-height: 220px; overflow: auto; margin: 8px 0; }
 #cessionOptions label { display: flex; gap: 6px; padding: 5px 0; overflow-wrap: anywhere; }
 #cessionOptions input { align-self: start; }
@@ -324,25 +320,31 @@ dialog .dialog-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-conte
     <input type="file" id="rulesFile" accept=".xlsx,.xls" hidden>
     <select id="sheetSel" aria-label="Лист" hidden></select>
     <div class="fileinfo" id="fileinfo">Файл не загружен. Загрузите выгрузку (или перетащите сюда), и на блоках появится количество должников.</div>
-    <div class="seg" id="oldSeg" role="group" aria-label="Должники">
-      <span class="seg-l">Должники:</span>
-      <button type="button" data-v="old" aria-pressed="false" title="Только умершие больше 5 месяцев назад. Повторное нажатие снимает фильтр">Смерть &gt; 5 мес.</button>
-      <button type="button" data-v="recent" aria-pressed="false" title="Только умершие не больше 5 месяцев назад. Повторное нажатие снимает фильтр">Смерть ≤ 5 мес.</button>
+    <div class="data-filters" role="group" aria-label="Фильтры по данным">
+      <select class="filter-field" id="deathFilter" aria-label="Дата смерти">
+        <option value="">Дата смерти: все</option>
+        <option value="old">Смерть: больше 5 мес.</option>
+        <option value="recent">Смерть: до 5 мес. включительно</option>
+      </select>
+      <label class="filter-field" id="amountFilter" title="Минимальный остаток долга с госпошлиной">
+        <span>Остаток долга + ГП, от</span>
+        <input id="minAmt" type="text" inputmode="numeric" placeholder="0" autocomplete="off" aria-label="Минимальный остаток долга с госпошлиной, в рублях">
+        <span>₽</span>
+      </label>
+      <details id="cessionMenu" hidden>
+        <summary class="filter-field" id="cessionLabel">Цессии: все</summary>
+        <div class="popover">
+          <input type="search" id="cessionSearch" placeholder="Найти цессию" aria-label="Поиск по наименованию цессии">
+          <div id="cessionOptions"></div>
+          <button type="button" class="btn" id="cessionClear">Сбросить</button>
+        </div>
+      </details>
     </div>
-    <label class="amt" title="Должники с остатком долга + ГП меньше этой суммы скрываются на схеме"><span>Остаток долга + ГП, от</span><input id="minAmt" type="text" inputmode="numeric" placeholder="0" autocomplete="off" aria-label="Минимальная сумма, руб."><span>руб.</span></label>
-    <details id="cessionMenu" hidden>
-      <summary class="btn" id="cessionLabel">Цессии: все</summary>
-      <div class="popover">
-        <input type="search" id="cessionSearch" placeholder="Найти цессию" aria-label="Поиск по наименованию цессии">
-        <div id="cessionOptions"></div>
-        <button type="button" class="btn" id="cessionClear">Сбросить</button>
-      </div>
-    </details>
-    <button class="btn" id="allBtn" disabled>Скачать общий реестр</button>
-    <button class="btn" id="compareBtn" hidden>Сравнить с предыдущей</button>
+    <button class="btn more" id="allBtn" disabled>Скачать общий реестр</button>
+    <button class="btn more" id="compareBtn" hidden>Сравнить с предыдущей</button>
     <button class="btn more" id="idsBtn" disabled title="Проверить список ID долгов: в каком блоке воронки каждый из них">Проверить список ID</button>
-    <button class="btn primary" id="pubBtn" hidden title="Сохранить посчитанную воронку, чтобы коллеги увидели её без загрузки файла">Опубликовать для всех</button>
-    <button class="btn" id="sharedBtn" hidden title="Показать данные, которые опубликовал коллега">Общие данные</button>
+    <button class="btn primary more" id="pubBtn" hidden title="Сохранить посчитанную воронку, чтобы коллеги увидели её без загрузки файла">Опубликовать для всех</button>
+    <button class="btn more" id="sharedBtn" hidden title="Показать данные, которые опубликовал коллега">Общие данные</button>
     <button class="btn more" id="addBlk" data-edit-only title="Добавить новый блок на схему">Добавить блок</button>
     <button class="btn more" id="dlRules" title="Скачать таблицу правил с текущими блоками и критериями">Скачать таблицу правил</button>
     <button class="btn more" id="restoreDel" data-edit-only hidden title="Вернуть на схему удалённые блоки исходной схемы">Вернуть удалённые блоки</button>
@@ -1290,9 +1292,14 @@ function paintCessions() {
   $("#cessionSearch").value = "";
   paintCessionOptions();
 }
+function paintCessionLabel() {
+  const label = $("#cessionLabel");
+  label.textContent = selectedCessions.size ? "Цессии: " + selectedCessions.size : "Цессии: все";
+  label.classList.toggle("is-active", selectedCessions.size > 0);
+}
 function paintCessionOptions() {
   const box = $("#cessionOptions"), query = cessionKey($("#cessionSearch").value);
-  $("#cessionLabel").textContent = selectedCessions.size ? "Цессии: " + selectedCessions.size : "Цессии: все";
+  paintCessionLabel();
   box.replaceChildren();
   const entries = [...cessionLabels].sort((a, b) => a[1].localeCompare(b[1], "ru"));
   for (const [key, label] of entries) {
@@ -1301,7 +1308,7 @@ function paintCessionOptions() {
     input.type = "checkbox"; input.checked = selectedCessions.has(key);
     input.addEventListener("change", () => {
       if (input.checked) selectedCessions.add(key); else selectedCessions.delete(key);
-      $("#cessionLabel").textContent = selectedCessions.size ? "Цессии: " + selectedCessions.size : "Цессии: все";
+      paintCessionLabel();
       recalc(); filterStatus();
     });
     line.append(input, document.createTextNode(label)); box.appendChild(line);
@@ -1340,23 +1347,32 @@ function filterStatus() {
   if (selectedCessions.size) parts.push("цессий выбрано " + selectedCessions.size);
   setStatus("Фильтры: " + parts.join(", ") + (deadMode && RES.dead ? ". Умерших показано " + nf.format(RES.dead.length) : ". Показано " + nf.format(RES.root.length) + " из " + nf.format(nRows())), 6000);
 }
-function paintSeg() {
-  document.querySelectorAll("#oldSeg button").forEach(b => { const on = b.dataset.v === deadMode; b.classList.toggle("on", on); b.setAttribute("aria-pressed", String(on)); });
-}
-document.querySelectorAll("#oldSeg button").forEach(b => b.addEventListener("click", () => {
-  deadMode = deadMode === b.dataset.v ? "" : b.dataset.v; paintSeg();          /* повторное нажатие — снова все */
-  try { localStorage.setItem("funnel-dead5", deadMode); } catch (e) {}
-  if (DATA) { recalc(); if (sel) select(sel); if (deadMode && colIdx("Дата смерти") < 0) setStatus("В файле нет колонки «Дата смерти»", 4000); else filterStatus(); }
-}));
-paintSeg();
 {
-  const inp = $("#minAmt"); if (minAmt > 0) inp.value = nf.format(minAmt);
+  const filter = $("#deathFilter");
+  filter.value = deadMode;
+  filter.classList.toggle("is-active", !!deadMode);
+  filter.addEventListener("change", () => {
+    deadMode = filter.value;
+    filter.classList.toggle("is-active", !!deadMode);
+    try { localStorage.setItem("funnel-dead5", deadMode); } catch (e) {}
+    if (DATA) {
+      recalc(); if (sel) select(sel);
+      if (deadMode && colIdx("Дата смерти") < 0) setStatus("В файле нет колонки «Дата смерти»", 4000);
+      else filterStatus();
+    }
+  });
+}
+{
+  const inp = $("#minAmt"), field = $("#amountFilter");
+  if (minAmt > 0) inp.value = nf.format(minAmt);
+  field.classList.toggle("is-active", minAmt > 0);
   let tm;
   inp.addEventListener("input", () => {
     clearTimeout(tm);
     tm = setTimeout(() => {
       const v = Number(String(inp.value).replace(/[\s\u00a0]/g, "").replace(",", "."));
       minAmt = isFinite(v) && v > 0 ? v : 0;
+      field.classList.toggle("is-active", minAmt > 0);
       try { localStorage.setItem("funnel-minamt", String(minAmt)); } catch (e) {}
       if (DATA) { recalc(); if (sel) select(sel); filterStatus(); }
     }, 450);
