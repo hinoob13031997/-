@@ -281,14 +281,23 @@ dialog { max-width: calc(100vw - 24px); width: 520px; max-height: 85vh; backgrou
 dialog::backdrop { background: rgb(0 0 0 / .32); }
 dialog h2 { margin: 0 0 12px; }
 dialog .dialog-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-#comparison { width: 940px; }
-#comparison table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+#comparison { position: fixed; inset: 12vh auto auto 5vw; margin: 0; width: min(940px, 90vw); height: min(620px, 80vh); min-width: min(360px, 90vw); min-height: 220px; max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); resize: both; overflow: hidden; padding: 0; box-shadow: 0 16px 60px rgb(0 0 0 / .2); z-index: 20; }
+#comparison[open] { display: flex; flex-direction: column; }
+#comparison .comparison-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); cursor: move; touch-action: none; flex-shrink: 0; user-select: none; }
+#comparison h2 { margin: 0; font-size: 18px; }
+#comparison .comparison-header button { cursor: pointer; }
+#comparisonBody { display: flex; flex-direction: column; min-height: 0; flex: 1; padding: 0 18px 18px; overflow: hidden; }
+#comparisonBody > p { margin: 8px 0; flex-shrink: 0; }
+#comparisonBody > button { align-self: flex-start; flex-shrink: 0; }
+#comparisonBody > details { max-height: 70px; overflow: auto; flex-shrink: 0; }
+#comparison table { border-collapse: separate; border-spacing: 0; width: 100%; font-variant-numeric: tabular-nums; }
 #comparison td, #comparison th { padding: 6px; border-bottom: 1px solid var(--line); text-align: right; }
 #comparison td:first-child, #comparison th:first-child { text-align: left; }
 #comparison .details-line { overflow-wrap: anywhere; }
 #comparison .details-line p { margin: 5px 0; }
 .node .delta { position: absolute; top: -11px; right: 6px; padding: 1px 5px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--accent); font-size: 11px; font-weight: 700; }
-#comparison .table-scroll { overflow: auto; max-height: 50vh; margin-bottom: 12px; }
+#comparison .table-scroll { overflow: auto; flex: 1; min-height: 0; margin: 8px 0 12px; isolation: isolate; }
+#comparison thead th { position: sticky; top: 0; z-index: 1; background: var(--surface); box-shadow: 0 1px 0 var(--line); }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
@@ -341,7 +350,7 @@ dialog .dialog-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-conte
       </details>
     </div>
     <button class="btn more" id="allBtn" disabled>Скачать общий реестр</button>
-    <button class="btn more" id="compareBtn" hidden>Сравнить с предыдущей</button>
+    <button class="btn more" id="compareBtn" hidden>Сравнить публикации</button>
     <button class="btn more" id="idsBtn" disabled title="Проверить список ID долгов: в каком блоке воронки каждый из них">Проверить список ID</button>
     <button class="btn primary more" id="pubBtn" hidden title="Сохранить посчитанную воронку, чтобы коллеги увидели её без загрузки файла">Опубликовать для всех</button>
     <button class="btn more" id="sharedBtn" hidden title="Показать данные, которые опубликовал коллега">Общие данные</button>
@@ -369,9 +378,11 @@ dialog .dialog-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-conte
     </form>
   </dialog>
   <dialog id="comparison" aria-labelledby="comparisonTitle">
-    <h2 id="comparisonTitle">Изменения между загрузками</h2>
+    <div class="comparison-header" id="comparisonHandle" title="Перетащите окно за заголовок">
+      <h2 id="comparisonTitle">Изменения между публикациями</h2>
+      <button class="btn" type="button" id="closeComparison" aria-label="Закрыть сравнение">Закрыть</button>
+    </div>
     <div id="comparisonBody"></div>
-    <form method="dialog" class="dialog-actions"><button class="btn">Закрыть</button></form>
   </dialog>
 
   <div class="legend">
@@ -1130,12 +1141,7 @@ placeAll(); syncNodeEls(); drawEdges();
 let DATA = null;            // {file, sheet, cols:[], rows:[[]], sheets:[], wb}
 let NORM = [], STR = [];    // per column caches
 let RES = null, OWN = {};   // node id -> row indices; node id -> active rules
-let previousLoad = null, latestLoad = null, comparisonBadges = new Map();
-function rememberLoad(file) {
-  if (latestLoad && latestLoad.file !== file) previousLoad = latestLoad;
-  latestLoad = { file, data: DATA, norm: NORM, str: STR };
-  paintSharedBtns();
-}
+let publishedPair = null, comparisonBadges = new Map();
 const OPS = [
   ["filled", "заполнено"], ["empty", "пусто"], ["eq", "="], ["ne", "≠"], ["lt", "<"], ["le", "≤"], ["gt", ">"], ["ge", "≥"],
   ["contains", "содержит"], ["ncontains", "не содержит"], ["older", "дата старше N лет"], ["newer", "дата не старше N лет"], ["emptynewer", "пусто или дата не старше N лет"], ["in", "одно из списка"], ["nin", "не из списка"]
@@ -1440,6 +1446,7 @@ function recalc() {
     const r = computeSets(visibleRows()); RES = r.res; OWN = r.own;
     if (deadMode) RES.root = visibleRows(true);
   }
+  if ($("#comparison").open) renderPublishedComparison();
   N.forEach(n => refreshNode(n.id));
   updatePanelData();
 }
@@ -1621,7 +1628,6 @@ async function bigLoad(file, sheetName, ctx0) {
     recalc();
     setInfo([el("b", null, file.name), " · лист «" + sh.name + "» · " + nf.format(n) + " строк · " + cols.length + " колонок (большой файл: в памяти " + wantIdx.length + " колонок, нужных для правил, чтение " + ((performance.now() - t0) / 1000).toFixed(0) + " с)"].concat(missingNote() || []));
     $("#allBtn").disabled = false; $("#idsBtn").disabled = false;
-    rememberLoad(file);
     setStatus("Файл загружен", 2500);
     if (sel) select(sel);
   } catch (e) {
@@ -2094,7 +2100,7 @@ function restoreFailedLoad(original, error) {
   setStatus("Не удалось прочитать файл: " + (error.message || error), 8000);
 }
 async function loadFile(file) {
-  if (fileBusy || bigBusy) { setStatus("Дождитесь завершения чтения текущего файла", 3000); return; }
+  if (fileBusy || bigBusy || publishing) { setStatus("Дождитесь завершения чтения или публикации текущего файла", 3000); return; }
   fileBusy = true;
   const original = { data: DATA, norm: NORM, str: STR };
   const isX = /\.xls[xm]$/i.test(file.name);
@@ -2112,7 +2118,6 @@ async function loadFile(file) {
     wb.SheetNames.forEach(s => ss.appendChild(new Option(s, s)));
     ss.hidden = wb.SheetNames.length < 2;
     useSheet(wb.SheetNames[0]);
-    rememberLoad(file);
     setStatus("Файл загружен", 2500);
   } catch (e) {
     if (isX && file.size > 3 * 1024 * 1024 && DATA === original.data) { await bigLoad(file); return; }
@@ -2120,7 +2125,7 @@ async function loadFile(file) {
   } finally { fileBusy = false; loadProgress(); }
 }
 $("#file").addEventListener("change", e => { const f = e.target.files[0]; if (f) loadFile(f); e.target.value = ""; });
-$("#sheetSel").addEventListener("change", e => { if (fileBusy || bigBusy || !FILEDATA()) return; try { if (DATA.big) { bigLoad(DATA.f, e.target.value, DATA.ctx); return; } useSheet(e.target.value); rememberLoad(DATA.f); } catch (err) { setStatus(String(err.message || err), 4000); } });
+$("#sheetSel").addEventListener("change", e => { if (fileBusy || bigBusy || publishing || !FILEDATA()) return; try { if (DATA.big) { bigLoad(DATA.f, e.target.value, DATA.ctx); return; } useSheet(e.target.value); } catch (err) { setStatus(String(err.message || err), 4000); } });
 const bar = $("#databar");
 ["dragenter", "dragover"].forEach(t => addEventListener(t, e => { if (e.dataTransfer && [...e.dataTransfer.types].includes("Files")) { e.preventDefault(); bar.classList.add("drag"); } }));
 ["dragleave", "drop"].forEach(t => addEventListener(t, e => { if (t === "drop" || e.target === document.documentElement || !e.relatedTarget) bar.classList.remove("drag"); }));
@@ -2191,43 +2196,50 @@ async function downloadAll() {
   await new Promise(r => setTimeout(r, 30));
   await saveBook(wb, "Общий реестр воронки.xlsx");
 }
-function comparisonSnapshot(source) {
-  const original = { data: DATA, norm: NORM, str: STR };
-  DATA = source.data; NORM = source.norm; STR = source.str;
-  try {
-    const idColumn = colIdx(ID_COL);
-    if (idColumn < 0) throw new Error("В выгрузке «" + DATA.file + "» нет колонки «" + ID_COL + "».");
-    if (bigMissing()) throw new Error("Для предыдущего большого файла нужны дополнительные колонки. Загрузите оба файла заново с текущими правилами.");
-    const columns = [...neededColNames()].filter(name => name !== CESSION_COL || selectedCessions.size || N.some(n => cfg[n.id].c.some(c => c.r && [c.r.col, c.r.cmp].includes(name))));
-    const missing = columns.filter(name => colIdx(name) < 0);
-    const ids = (DATA.big ? DATA.idRaw : DATA.rows.map(r => r[idColumn])).map(cleanId);
-    const unique = new Set(), duplicates = new Set();
-    let blank = 0;
-    for (const id of ids) {
-      if (!id) blank++;
-      else if (unique.has(id)) duplicates.add(id);
-      else unique.add(id);
-    }
-    const { res, own } = computeSets(visibleRows());
-    if (deadMode) res.root = visibleRows(true);
-    return { res, own, ids, duplicates, blank, missing };
-  } finally {
-    DATA = original.data; NORM = original.norm; STR = original.str;
+function publicationSnapshot(snapshot) {
+  if (selectedCessions.size && !snapshot.cessions) throw new Error("В одной из публикаций нет данных о цессиях. Для сравнения выберите все цессии.");
+  if (deadMode && !snapshot.dd) throw new Error("В одной из публикаций нет дат смерти. Для сравнения выберите все даты смерти.");
+  if (minAmt > 0 && !snapshot.amt) throw new Error("В одной из публикаций нет суммы долга. Для сравнения сбросьте фильтр по сумме.");
+  const ids = snapshot.ids.map(cleanId), unique = new Set(), duplicates = new Set();
+  let blank = 0;
+  for (const id of ids) {
+    if (!id) blank++;
+    else if (unique.has(id)) duplicates.add(id);
+    else unique.add(id);
   }
+  const date = new Date(), threshold = Date.UTC(date.getFullYear(), date.getMonth() - 5, date.getDate());
+  const visible = new Uint8Array(snapshot.n), visibleRoot = new Uint8Array(snapshot.n);
+  for (let i = 0; i < snapshot.n; i++) {
+    if (selectedCessions.size && !selectedCessions.has(cessionKey(snapshot.cessions[i]))) continue;
+    if (minAmt > 0 && !(typeof snapshot.amt[i] === "number" && snapshot.amt[i] >= minAmt)) continue;
+    visibleRoot[i] = 1;
+    const death = snapshot.dd && snapshot.dd[i];
+    if (death != null && deadMode === "recent" && death * 864e5 < threshold) continue;
+    if (death != null && deadMode === "old" && death * 864e5 >= threshold) continue;
+    visible[i] = 1;
+  }
+  const decoded = new Map(), res = {};
+  for (const [id, key] of Object.entries(snapshot.map)) {
+    if (!decoded.has(key)) decoded.set(key, unb64(snapshot.sets[key]));
+    const bits = decoded.get(key), mask = id === "root" ? visibleRoot : visible;
+    const indices = [];
+    for (let i = 0; i < snapshot.n; i++) if (mask[i] && (bits[i >> 3] & (1 << (i & 7)))) indices.push(i);
+    res[id] = indices;
+  }
+  return { res, ids, duplicates, blank, own: snapshot.own || {} };
 }
-function compareLoads(previous, current) {
-  const a = comparisonSnapshot(previous), b = comparisonSnapshot(current);
-  const changedColumns = [...new Set([...a.missing, ...b.missing])]
-    .filter(name => a.missing.includes(name) !== b.missing.includes(name));
-  if (changedColumns.length) throw new Error("В одной из выгрузок отсутствуют колонки для сравнения: " + changedColumns.join(", ") + ".");
+function comparePublications(previous, current) {
+  const a = publicationSnapshot(previous), b = publicationSnapshot(current);
   const ignored = new Set([...a.duplicates, ...b.duplicates]);
-  const membership = (snapshot, id) => new Set(snapshot.res[id].map(i => snapshot.ids[i]).filter(key => key && !ignored.has(key)));
+  const membership = (snapshot, id) => new Set((snapshot.res[id] || []).map(i => snapshot.ids[i]).filter(key => key && !ignored.has(key)));
   const blocks = [];
   const beforeById = new Map(), afterById = new Map();
-  for (const n of N) {
-    if (n.p && (!a.own[n.id] || !b.own[n.id])) continue;
-    const before = membership(a, n.id), after = membership(b, n.id);
-    const label = n.t + " (" + n.id + ")";
+  const blockIds = new Set([...Object.keys(current.map), ...Object.keys(previous.map)]);
+  for (const id of blockIds) {
+    if (id !== "root" && !a.own[id] && !b.own[id]) continue;
+    const before = membership(a, id), after = membership(b, id);
+    const name = current.labels?.[id] || previous.labels?.[id] || byId[id]?.t || id;
+    const label = name + " (" + id + ")";
     for (const [ids, byContract] of [[before, beforeById], [after, afterById]]) {
       for (const id of ids) {
         if (!byContract.has(id)) byContract.set(id, []);
@@ -2236,16 +2248,19 @@ function compareLoads(previous, current) {
     }
     const added = [...after].filter(id => !before.has(id));
     const removed = [...before].filter(id => !after.has(id));
-    blocks.push({ id: n.id, label, before: before.size, after: after.size, added, removed });
+    blocks.push({ id, label, before: before.size, after: after.size, added, removed });
   }
   return { blocks, beforeById, afterById, duplicates: [...ignored], blankBefore: a.blank, blankAfter: b.blank };
 }
 function drawComparison(before, after, result) {
   const box = $("#comparisonBody");
-  const sourceLabel = source => source.data.file + " · «" + source.data.sheet + "»";
+  const sourceLabel = source => source.file + (source.sheet ? " · «" + source.sheet + "»" : "") + " · " + fmtWhen(source.at);
+  const rulesChanged = [...new Set([...Object.keys(before.map), ...Object.keys(after.map)])].some(id => before.sig?.[id] !== after.sig?.[id]);
+  const note = "Показаны две последние опубликованные версии с учётом текущих фильтров. Повторяющиеся ID исключены из обеих версий."
+    + (rulesChanged ? " Между публикациями менялись блоки или правила отбора, это также влияет на изменения." : "");
   box.replaceChildren(
     el("p", null, "Предыдущая: " + sourceLabel(before) + " → Текущая: " + sourceLabel(after)),
-    el("p", "hint", "К обеим выгрузкам применены текущие правила и фильтры. Повторяющиеся ID исключены из обеих выгрузок.")
+    el("p", "hint", note)
   );
   const { blocks, beforeById, afterById, duplicates, blankBefore, blankAfter } = result;
   if (blankBefore || blankAfter || duplicates.length) {
@@ -2298,18 +2313,58 @@ function drawComparison(before, after, result) {
   });
   box.appendChild(exportBtn);
 }
-$("#compareBtn").addEventListener("click", () => {
-  if (!previousLoad || !FILEDATA() || fileBusy || bigBusy) return;
-  const current = { data: DATA, norm: NORM, str: STR };
+function renderPublishedComparison() {
+  comparisonBadges.clear();
+  if (!publishedPair?.previous) return;
+  const scrollTop = $("#comparison .table-scroll")?.scrollTop || 0;
   try {
-    const result = compareLoads(previousLoad, current);
-    comparisonBadges = new Map(result.blocks.filter(block => block.added.length || block.removed.length).map(block => [block.id, block]));
-    N.forEach(n => refreshNode(n.id));
-    drawComparison(previousLoad, current, result);
-  }
-  catch (e) { $("#comparisonBody").replaceChildren(el("p", "warn-note", e.message || String(e))); }
-  $("#comparison").showModal();
+    const { previous, current } = publishedPair;
+    const result = comparePublications(previous, current);
+    if (DATA?.shared?.ver === current.ver || DATA?.publishedVersion === current.ver) {
+      comparisonBadges = new Map(result.blocks.filter(block => block.added.length || block.removed.length).map(block => [block.id, block]));
+    }
+    drawComparison(previous, current, result);
+    $("#comparison .table-scroll").scrollTop = scrollTop;
+  } catch (e) { $("#comparisonBody").replaceChildren(el("p", "warn-note", e.message || String(e))); }
+}
+$("#compareBtn").addEventListener("click", () => {
+  if (!publishedPair?.previous) return;
+  renderPublishedComparison();
+  N.forEach(n => refreshNode(n.id));
+  const dialog = $("#comparison");
+  if (!dialog.open) dialog.show();
+  keepComparisonInView();
 });
+$("#closeComparison").addEventListener("click", () => $("#comparison").close());
+function keepComparisonInView() {
+  const dialog = $("#comparison");
+  if (!dialog.open) return;
+  const rect = dialog.getBoundingClientRect();
+  dialog.style.left = Math.max(8, Math.min(rect.left, innerWidth - rect.width - 8)) + "px";
+  dialog.style.top = Math.max(8, Math.min(rect.top, innerHeight - rect.height - 8)) + "px";
+}
+{
+  const handle = $("#comparisonHandle"), dialog = $("#comparison");
+  let move = null;
+  handle.addEventListener("pointerdown", e => {
+    if (e.button !== 0 || e.target.closest("button")) return;
+    const rect = dialog.getBoundingClientRect();
+    move = { id: e.pointerId, x: e.clientX - rect.left, y: e.clientY - rect.top };
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener("pointermove", e => {
+    if (!move || move.id !== e.pointerId) return;
+    const rect = dialog.getBoundingClientRect();
+    dialog.style.left = Math.max(8, Math.min(e.clientX - move.x, innerWidth - rect.width - 8)) + "px";
+    dialog.style.top = Math.max(8, Math.min(e.clientY - move.y, innerHeight - rect.height - 8)) + "px";
+  });
+  for (const event of ["pointerup", "pointercancel", "lostpointercapture"]) {
+    handle.addEventListener(event, e => { if (move?.id === e.pointerId) move = null; });
+  }
+  addEventListener("resize", keepComparisonInView);
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(keepComparisonInView).observe(dialog);
+}
 
 const registryDialog = $("#registryDialog");
 function paintRegistryHint() {
@@ -2326,8 +2381,8 @@ $("#allBtn").addEventListener("click", () => {
 registryDialog.addEventListener("close", () => { if (registryDialog.returnValue === "download") downloadAll(); });
 
 /* ---------- общие данные: один загружает выгрузку и публикует, у остальных воронка появляется сама ---------- */
-/* В репозиторий уходит только посчитанное: внутренний ID, дата смерти, остаток долга + ГП и состав блоков.
-   data.bin — сжатый JSON с данными, data-meta.json — маленькая метка версии, по ней остальные узнают об обновлении. */
+/* data.bin содержит текущую публикацию и один предыдущий снимок для сравнения.
+   data-meta.json сообщает версию. Оба файла публикуются одним коммитом. */
 const FILEDATA = () => (DATA && !DATA.shared ? DATA : null);
 let SH = null;                         // { sets: {nodeId: Uint8Array-битсет}, own: {nodeId: число правил} }
 /* блоки, которых не было в опубликованных данных или чьи правила поменялись после публикации:
@@ -2394,49 +2449,87 @@ function buildShared() {
   const ver = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const sig = Object.fromEntries(N.map(nd => [nd.id, ruleSig(nd.id)]));
   const why = packWhy(res, own);
-  return { v: 1, ver, at: new Date().toISOString(), file: DATA.file, sheet: DATA.sheet || "", n, ids, amt, dd, cessions: DATA.cessions || undefined, own: owns, map, sets, sig, why };
+  return { v: 1, ver, at: new Date().toISOString(), file: DATA.file, sheet: DATA.sheet || "", n, ids, amt, dd, labels: Object.fromEntries(N.map(node => [node.id, node.t])), cessions: DATA.cessions || undefined, own: owns, map, sets, sig, why };
 }
-async function repoShas() {
-  const r = await fetch(API.replace(/\/$/, "") + "?ref=" + BR + "&_=" + Date.now(), { headers: ghHeaders(), cache: "no-store" });
-  if (!r.ok) throw ghErr(r, "GitHub");
-  const o = {}; (await r.json()).forEach(f => { o[f.name] = f.sha; }); return o;
+function comparisonBaseline(snapshot) {
+  const { previous, why, ...baseline } = snapshot;
+  return baseline;
 }
-async function ghPutBytes(file, u8, message, sha) {
-  const body = { message, content: b64(u8), branch: BR };
-  if (sha) body.sha = sha;
-  const r = await fetch(API + file, { method: "PUT", headers: ghHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(body) });
-  if (!r.ok) throw ghErr(r, "GitHub");
-  return (await r.json()).content.sha;
+async function githubJson(path, options) {
+  const response = await fetch("https://api.github.com/repos/" + REPO + "/" + path, {
+    ...options,
+    headers: ghHeaders({ "Content-Type": "application/json" }),
+    cache: "no-store"
+  });
+  if (!response.ok) throw ghErr(response, "GitHub");
+  return response.json();
 }
+async function readPublishedAt(ref) {
+  const response = await fetch(API + "data.bin?ref=" + encodeURIComponent(ref), {
+    headers: ghHeaders({ Accept: "application/vnd.github.raw" }), cache: "no-store"
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw ghErr(response, "Предыдущая публикация");
+  return JSON.parse(td.decode(await gunzipBytes(new Uint8Array(await response.arrayBuffer()))));
+}
+async function commitPublication(snapshot) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // The ref update commits data and its metadata together. A concurrent publication forces a fresh baseline.
+    const head = await githubJson("git/ref/heads/" + BR);
+    const parent = await githubJson("git/commits/" + head.object.sha);
+    const published = await readPublishedAt(head.object.sha);
+    if (published?.ver === snapshot.ver) return published;
+    snapshot.previous = published ? comparisonBaseline(published) : null;
+    const bytes = await gzipBytes(te.encode(JSON.stringify(snapshot)));
+    const mb = (bytes.length / 1048576).toLocaleString("ru-RU", { maximumFractionDigits: 1 });
+    if (bytes.length > 45 * 1048576) throw new Error("данные получились слишком большими (" + mb + " МБ)");
+    setStatus("Публикую реестр и сравнение (" + mb + " МБ)…");
+    const metadata = { ver: snapshot.ver, at: snapshot.at, file: snapshot.file, n: snapshot.n, size: bytes.length };
+    const dataBlob = await githubJson("git/blobs", { method: "POST", body: JSON.stringify({ content: b64(bytes), encoding: "base64" }) });
+    const metaBlob = await githubJson("git/blobs", { method: "POST", body: JSON.stringify({ content: JSON.stringify(metadata, null, 1), encoding: "utf-8" }) });
+    const tree = await githubJson("git/trees", { method: "POST", body: JSON.stringify({
+      base_tree: parent.tree.sha,
+      tree: [
+        { path: "data.bin", mode: "100644", type: "blob", sha: dataBlob.sha },
+        { path: "data-meta.json", mode: "100644", type: "blob", sha: metaBlob.sha }
+      ]
+    }) });
+    const commit = await githubJson("git/commits", { method: "POST", body: JSON.stringify({
+      message: "Общие данные и сравнение: " + snapshot.file,
+      tree: tree.sha, parents: [head.object.sha]
+    }) });
+    try {
+      await githubJson("git/refs/heads/" + BR, { method: "PATCH", body: JSON.stringify({ sha: commit.sha, force: false }) });
+      return snapshot;
+    } catch (e) {
+      if ((e.status === 409 || e.status === 422) && attempt < 2) continue;
+      throw e;
+    }
+  }
+}
+let publishing = false;
 async function publishShared() {
+  if (publishing) return;
   if (!FILEDATA() || !RES) { setStatus("Сначала загрузите выгрузку Excel", 4000); return; }
   if (!TOKEN) { setStatus("Введите пароль правки, затем снова нажмите «Опубликовать для всех»", 6000); showAuth(); return; }
   if (colIdx(ID_COL) < 0) { setStatus("В файле нет колонки «" + ID_COL + "», публиковать нечего", 6000); return; }
-  if (bigBusy || bigMissing()) { setStatus("Файл ещё дочитывается, нажмите чуть позже", 4000); return; }
-  const btn = $("#pubBtn"); btn.disabled = true;
+  if (fileBusy || bigBusy || bigMissing()) { setStatus("Файл ещё дочитывается, нажмите чуть позже", 4000); return; }
+  publishing = true;
+  const source = DATA, btn = $("#pubBtn"); btn.disabled = true;
   try {
     setStatus("Готовлю данные для публикации…"); await tick();
-    const snap = buildShared();
-    const gz = await gzipBytes(te.encode(JSON.stringify(snap)));
-    const mb = (gz.length / 1048576).toLocaleString("ru-RU", { maximumFractionDigits: 1 });
-    if (gz.length > 45 * 1048576) throw new Error("данные получились слишком большими (" + mb + " МБ)");
-    const meta = { ver: snap.ver, at: snap.at, file: snap.file, n: snap.n, size: gz.length };
-    for (let attempt = 0; ; attempt++) {
-      try {
-        setStatus("Отправляю на GitHub (" + mb + " МБ)…");
-        const shas = await repoShas();
-        await ghPutBytes("data.bin", gz, "Общие данные: " + snap.file + ", " + snap.n + " строк", shas["data.bin"]);
-        await ghPutBytes("data-meta.json", te.encode(JSON.stringify(meta, null, 1)), "Общие данные: метка версии", shas["data-meta.json"]);
-        break;
-      } catch (e) { if ((e.status === 409 || e.status === 422) && attempt < 2) continue; throw e; }
-    }
-    SHARED_META = meta; SHARED_VER = snap.ver; sharedNotified = snap.ver; sharedEtag = null;
+    const snap = await commitPublication(buildShared());
+    publishedPair = { previous: snap.previous || null, current: comparisonBaseline(snap) };
+    if (DATA === source) DATA.publishedVersion = snap.ver;
+    SHARED_META = { ver: snap.ver, at: snap.at, file: snap.file, n: snap.n };
+    SHARED_VER = snap.ver; sharedNotified = snap.ver; sharedEtag = null;
     paintSharedBtns();
-    setStatus("Опубликовано для всех: " + nf.format(snap.n) + " строк. У коллег воронка обновится в течение минуты", 9000);
+    if ($("#comparison").open) { renderPublishedComparison(); N.forEach(n => refreshNode(n.id)); }
+    setStatus("Опубликовано для всех: " + nf.format(snap.n) + " строк." + (snap.previous ? " Доступно сравнение с предыдущей публикацией." : " Сравнение появится после следующей публикации.") + " У коллег данные обновятся в течение минуты", 10000);
   } catch (e) {
     if (e.status === 401 || e.status === 403) { TOKEN = null; editing = false; updateAuthBtn(); setStatus("Нет прав записи: войдите заново и повторите публикацию", 8000); }
     else setStatus("Не удалось опубликовать: " + (e.message || e), 9000);
-  } finally { btn.disabled = false; }
+  } finally { publishing = false; paintSharedBtns(); }
 }
 async function fetchMeta() {
   try {
@@ -2464,6 +2557,7 @@ async function fetchDataBin() {
   return new Uint8Array(await f.arrayBuffer());
 }
 function applyShared(j) {
+  publishedPair = { previous: j.previous || null, current: comparisonBaseline(j) };
   const n = j.n, cols = [ID_COL];
   if (j.dd) cols.push(DEAD_COL);
   if (j.amt) cols.push(AMT_COL);
@@ -2502,11 +2596,12 @@ function sharedInfo() {
 }
 function paintSharedBtns() {
   const pub = $("#pubBtn"), sh = $("#sharedBtn"); if (!pub || !sh) return;
-  $("#compareBtn").hidden = !FILEDATA() || !previousLoad;
+  $("#compareBtn").hidden = !publishedPair?.previous;
+  if (!publishedPair?.previous && $("#comparison").open) $("#comparison").close();
   pub.hidden = !REMOTE || !TOKEN;
   for (const control of document.querySelectorAll("[data-edit-only]")) control.hidden = REMOTE && !TOKEN;
   refreshResetDel();
-  pub.disabled = !FILEDATA();
+  pub.disabled = !FILEDATA() || publishing;
   pub.title = FILEDATA() ? "Сохранить посчитанную воронку, чтобы коллеги увидели её без загрузки файла" : "Чтобы опубликовать: войдите для правки и загрузите Excel. Сейчас на экране " + (DATA && DATA.shared ? "уже опубликованные данные" : "нет файла");
   sh.hidden = !(REMOTE && SHARED_META);
   if (SHARED_META) {
@@ -2516,7 +2611,7 @@ function paintSharedBtns() {
 }
 /* force: пользователь сам нажал кнопку — показать общие данные, даже если открыт свой файл */
 async function checkShared(force) {
-  if (!REMOTE || sharedBusy || fileBusy || bigBusy) return;
+  if (!REMOTE || sharedBusy || fileBusy || bigBusy || publishing) return;
   sharedBusy = true;
   try {
     if (force) sharedEtag = null;
@@ -2534,6 +2629,7 @@ async function checkShared(force) {
     loadProgress("Загружаю общие данные…");
     const j = JSON.parse(td.decode(await gunzipBytes(await fetchDataBin())));
     if (fileBusy || bigBusy || (FILEDATA() && !force)) return;
+    if (j.ver !== meta.ver) throw new Error("публикация обновляется, повторите через несколько секунд");
     applyShared(j);
     setStatus(showing ? "Общие данные обновлены" : "Загружены общие данные", 4000);
   } catch (e) { sharedEtag = null; setStatus("Не удалось загрузить общие данные: " + (e.message || e), 7000); }
